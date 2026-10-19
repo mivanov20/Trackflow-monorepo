@@ -1,0 +1,13 @@
+[
+  {"name": "Pacific Box & Packaging Co.", "country": "United States", "categories": ["Packaging"], "unit_rate_eur": 0.82, "status": "active"},
+  {"name": "Golden State Pallet Works", "country": "United States", "categories": ["Pallets"], "unit_rate_eur": 9.40, "status": "active"},
+  {"name": "LabelPro Printing", "country": "United States", "categories": ["Labels & Printing"], "unit_rate_eur": 0.04, "status": "active"},
+  {"name": "WrapRight Supply", "country": "United States", "categories": ["Stretch Wrap", "Packaging"], "unit_rate_eur": 14.75, "status": "active"},
+  {"name": "Cascade Handling Equipment", "country": "United States", "categories": ["Handling Equipment", "Safety Gear"], "unit_rate_eur": 289.00, "status": "active"},
+  {"name": "SunCoast Packaging", "country": "United States", "categories": ["Packaging", "Labels & Printing"], "unit_rate_eur": 0.95, "status": "suspended"},
+  {"name": "Cartonajes Zaragoza S.L.", "country": "Spain", "categories": ["Packaging"], "unit_rate_eur": 0.71, "status": "active"},
+  {"name": "Iberpalet S.A.", "country": "Spain", "categories": ["Pallets"], "unit_rate_eur": 7.85, "status": "active"},
+  {"name": "Etiquetas del Ebro", "country": "Spain", "categories": ["Labels & Printing"], "unit_rate_eur": 0.03, "status": "active"},
+  {"name": "Plásticos Aragón", "country": "Spain", "categories": ["Stretch Wrap"], "unit_rate_eur": 12.60, "status": "active"},
+  {"name": "Seguridad Logística Norte", "country": "Spain", "categories": ["Safety Gear", "Handling Equipment"], "unit_rate_eur": 36.50, "status": "suspended"}
+]

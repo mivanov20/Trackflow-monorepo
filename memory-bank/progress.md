@@ -22,3 +22,7 @@ Milestone 4: establish AI-agent context and delivery conventions, keep the publi
 - Reconcile public website copy with the authoritative company briefing as it evolves.
 - Preserve the backoffice demo-data disclaimer until real integrations exist.
 - Add backend services only after requirements and API contracts are defined.
+## Project 7: Supplier Directory (branch `Supplier-Directory`)
+
+- `services/supplier-directory/` implements the supplier API with seeder and tests; `uis/backoffice/suppliers.html` is the supplier page, linked from the backoffice menu.
+- Supplier data (11 sample suppliers in the United States and Spain) was invented because `CONTEXT.md` has no supplier list; replace `data/suppliers_seed.json` if the instructor provides real data.

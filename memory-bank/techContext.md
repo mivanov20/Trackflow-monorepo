@@ -8,7 +8,8 @@ This is a company-project monorepo. User interfaces belong in `uis/`, backend AP
 
 - Root application: Next.js 15, React 19, and TypeScript, with App Router code in `app/`, reusable UI in `components/`, candidate API helpers in `lib/`, and candidate types in `types/`. The current root application is a candidate-pipeline demo; do not treat it as TrackFlow domain truth.
 - `uis/website/`: the existing TrackFlow public site, implemented as static HTML and vanilla JavaScript with Tailwind loaded from its CDN. Its entry points are `index.html` and `application.html`; `components.js` renders shared data-driven homepage cards, while `index.js`, `language.js`, and `validation.js` handle page interactions, localization, and form validation.
-- `uis/backoffice/`: TrackFlow internal operations UI, implemented as static HTML/CSS/vanilla JavaScript with sample-only metrics. Its entry view is `index.html`; it has no live API connection.
+- `uis/backoffice/`: TrackFlow internal operations UI, implemented as static HTML/CSS/vanilla JavaScript. Its entry view `index.html` uses sample-only metrics with no API connection; `suppliers.html` is the supplier directory and talks to `services/supplier-directory`.
+- `services/supplier-directory/`: FastAPI + TinyDB + Pydantic supplier API (Python 3.12, managed with uv). Run from that folder: `uv run seed`, `uv run serve` (port 8000), `uv run pytest`. Supplier fields, categories and statuses are not in `CONTEXT.md`; they were defined in the service (`unit_rate_eur` in EUR per unit, statuses `active`/`suspended`, six procurement categories) and documented in its README.
 - `uis/talent-pipeline-tracker/`: a separate static candidate-tracker project that talks to the 4Geeks tracker API. It is not a TrackFlow operations application.
 
 ## Commands

@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="TrackFlow supplier directory: procurement suppliers, rates and status." />
+    <title>Supplier directory | TrackFlow</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./suppliers.js" defer></script>
+  </head>
+  <body>
+    <div class="workspace">
+      <aside class="sidebar" aria-label="Workspace navigation">
+        <a class="brand" href="./index.html" aria-label="TrackFlow operations desk">
+          <span class="brand-mark" aria-hidden="true">T</span>
+          <span>trackflow<span class="brand-sub">OPERATIONS</span></span>
+        </a>
+
+        <div class="workspace-switcher">
+          <span class="switcher-mark" aria-hidden="true">O</span>
+          <span><strong>Operations</strong><small>Internal workspace</small></span>
+          <span class="switcher-caret" aria-hidden="true">⌄</span>
+        </div>
+
+        <p class="nav-caption">WORKSPACE</p>
+        <nav class="primary-nav">
+          <a class="nav-item" href="./index.html#overview"><span class="nav-glyph" aria-hidden="true">▦</span>Overview</a>
+          <a class="nav-item" href="./index.html#shipments"><span class="nav-glyph" aria-hidden="true">↗</span>Shipments</a>
+          <a class="nav-item selected" href="./suppliers.html" aria-current="page"><span class="nav-glyph" aria-hidden="true">⌂</span>Suppliers</a>
+          <a class="nav-item" href="./index.html#locations"><span class="nav-glyph" aria-hidden="true">⌖</span>Warehouses</a>
+          <a class="nav-item" href="./index.html#carriers"><span class="nav-glyph" aria-hidden="true">⇢</span>Carriers</a>
+          <a class="nav-item" href="./index.html#returns"><span class="nav-glyph" aria-hidden="true">↶</span>Returns</a>
+        </nav>
+
+        <div class="sidebar-bottom">
+          <div class="connection-state"><span></span>SUPPLIER API</div>
+          <p>Live data from the<br />supplier-directory service</p>
+          <a href="../website/index.html">Public website <span aria-hidden="true">↗</span></a>
+        </div>
+      </aside>
+
+      <main id="main" class="main-area">
+        <header class="topbar">
+          <div class="breadcrumbs"><span>Operations</span><span aria-hidden="true">/</span><strong>Suppliers</strong></div>
+          <div class="topbar-meta"><span class="avatar" aria-label="Demo user">TF</span></div>
+        </header>
+
+        <div class="content-wrap">
+          <section class="page-heading">
+            <div>
+              <p class="eyebrow">OPERATIONS / SUPPLIERS</p>
+              <h1>Supplier directory</h1>
+              <p class="page-subtitle">Single source of truth for procurement suppliers, current rates and status.</p>
+            </div>
+            <button class="refresh-button" id="refreshButton" type="button" title="Reload suppliers from the API">
+              <span aria-hidden="true">↻</span> Refresh
+            </button>
+          </section>
+
+          <section class="demo-notice error-notice" id="apiError" role="alert" hidden>
+            <span class="notice-mark" aria-hidden="true">!</span>
+            <p id="apiErrorText"></p>
+          </section>
+
+          <section class="overview-grid" aria-label="Supplier summary">
+            <article class="summary-card">
+              <div class="summary-top"><span>SUPPLIERS SHOWN</span><span class="summary-symbol">⌂</span></div>
+              <strong id="totalCount">00</strong>
+              <p>Matching the current filters</p>
+            </article>
+            <article class="summary-card">
+              <div class="summary-top"><span>ACTIVE</span><span class="summary-symbol green">●</span></div>
+              <strong id="activeCount">00</strong>
+              <p>Available for new orders</p>
+            </article>
+            <article class="summary-card">
+              <div class="summary-top"><span>SUSPENDED</span><span class="summary-symbol orange">◷</span></div>
+              <strong id="suspendedCount">00</strong>
+              <p>On hold</p>
+            </article>
+            <article class="summary-card">
+              <div class="summary-top"><span>COUNTRIES</span><span class="summary-symbol">⌖</span></div>
+              <strong id="countryCount">00</strong>
+              <p>In the full directory</p>
+            </article>
+          </section>
+
+          <section class="shipment-section" aria-labelledby="supplier-title">
+            <div class="section-title-row">
+              <div><p class="eyebrow">PROCUREMENT</p><h2 id="supplier-title">Suppliers</h2></div>
+              <button class="primary-button" id="toggleFormButton" type="button" aria-expanded="false" aria-controls="supplierForm">+ Add supplier</button>
+            </div>
+
+            <form class="supplier-form" id="supplierForm" novalidate hidden>
+              <div class="form-grid">
+                <label>Name
+                  <input id="nameInput" name="name" type="text" maxlength="120" autocomplete="off" />
+                </label>
+                <label>Country
+                  <input id="countryInput" name="country" type="text" maxlength="80" autocomplete="off" />
+                </label>
+                <label>Rate (EUR per unit)
+                  <input id="rateInput" name="unit_rate_eur" type="number" min="0" step="0.01" inputmode="decimal" />
+                </label>
+                <label>Status
+                  <select id="statusInput" name="status">
+                    <option value="active">Active</option>
+                    <option value="suspended">Suspended</option>
+                  </select>
+                </label>
+              </div>
+              <fieldset>
+                <legend>Product categories</legend>
+                <div class="category-options" id="categoryOptions"></div>
+              </fieldset>
+              <p class="form-error" id="formError" role="alert" hidden></p>
+              <div class="form-actions">
+                <button class="primary-button" type="submit">Register supplier</button>
+                <button class="refresh-button" type="button" id="cancelFormButton">Cancel</button>
+              </div>
+            </form>
+
+            <div class="toolbar">
+              <p class="toolbar-label">Filter</p>
+              <div class="filter-group">
+                <label class="visually-hidden" for="countryFilter">Filter by country</label>
+                <select id="countryFilter"><option value="">All countries</option></select>
+                <label class="visually-hidden" for="categoryFilter">Filter by category</label>
+                <select id="categoryFilter"><option value="">All categories</option></select>
+              </div>
+            </div>
+
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th scope="col">SUPPLIER</th><th scope="col">COUNTRY</th><th scope="col">CATEGORIES</th><th scope="col">RATE (EUR / UNIT)</th><th scope="col">STATUS</th><th scope="col">LAST UPDATE</th></tr></thead>
+                <tbody id="supplierRows"></tbody>
+              </table>
+              <p class="empty-state" id="emptyState" hidden>No suppliers match those filters.</p>
+            </div>
+            <div class="table-footer"><span id="resultSummary" aria-live="polite">Loading suppliers…</span><span>Data from the supplier-directory API</span></div>
+          </section>
+
+          <footer class="page-footer"><span>TRACKFLOW OPERATIONS</span><span>Internal workspace · Supplier directory</span></footer>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>
