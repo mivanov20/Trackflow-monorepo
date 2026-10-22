@@ -3,7 +3,7 @@
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from .models import (
@@ -99,11 +99,12 @@ def update_status(
     return repo.update_status(supplier_id, body.status)
 
 
-@app.delete("/suppliers/{supplier_id}", status_code=status.HTTP_204_NO_CONTENT)
+@app.delete("/suppliers/{supplier_id}", response_model=Supplier)
 def delete_supplier(supplier_id: int, repo: SupplierRepository = Depends(get_repository)):
-    if not repo.delete(supplier_id):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Supplier {supplier_id} not found")
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    """Remove a supplier and return the removed record."""
+    supplier = _get_or_404(repo, supplier_id)
+    repo.delete(supplier_id)
+    return supplier
 
 
 def serve() -> None:

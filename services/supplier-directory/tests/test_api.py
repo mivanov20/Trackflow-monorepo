@@ -151,7 +151,9 @@ def test_status_update_rejects_other_values_and_404(client):
 
 def test_delete_and_404(client):
     created = client.post("/suppliers", json=NEW_SUPPLIER).json()
-    assert client.delete(f"/suppliers/{created['id']}").status_code == 204
+    response = client.delete(f"/suppliers/{created['id']}")
+    assert response.status_code == 200
+    assert response.json() == created
     assert client.get(f"/suppliers/{created['id']}").status_code == 404
     assert client.delete(f"/suppliers/{created['id']}").status_code == 404
 

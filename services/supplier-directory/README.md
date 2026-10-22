@@ -18,7 +18,7 @@ Centralized supplier registry that unifies TrackFlow's two markets (Los Angeles 
 
 Suppliers are suspended, not deleted, when they have a high incident rate. A status change does not move `updated_at`, so it stays a clean history of rate changes.
 
-The field definitions, valid categories and the 15 seed suppliers come from the project brief and live in `supplier_directory/models.py` and `supplier_directory/seed.py`.
+The field definitions, valid categories and the 15 seed suppliers come from the Supplier Directory section of the root `CONTEXT.md` and live in `supplier_directory/models.py` and `supplier_directory/seed.py`.
 
 ## Run
 
@@ -41,7 +41,7 @@ The API also seeds an empty database on startup, so it never starts empty. The d
 | `GET` | `/suppliers/{id}` | `404` if missing |
 | `PATCH` | `/suppliers/{id}/rate` | Body `{"rate_per_shipment": 7.5}`; records `updated_at` |
 | `PATCH` | `/suppliers/{id}/status` | Body `{"status": "suspended"}` |
-| `DELETE` | `/suppliers/{id}` | `204`; `404` if missing |
+| `DELETE` | `/suppliers/{id}` | `200` with the removed supplier; `404` if missing |
 | `GET` | `/categories` | Valid categories, used by the backoffice filters and form |
 
 The backoffice page `uis/backoffice/suppliers.html` consumes this API (CORS allows `localhost` origins).
