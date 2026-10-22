@@ -12,8 +12,23 @@ const els = {
   apiErrorText: document.querySelector("#apiErrorText"),
 };
 
-const rateFormat = new Intl.NumberFormat("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const CURRENCY_BY_COUNTRY = { USA: "USD", Spain: "EUR" };
+const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const CATEGORY_LABELS = {
+  carrier_last_mile: "Carrier · last mile",
+  carrier_international: "Carrier · international",
+  warehouse_supplies: "Warehouse supplies",
+  packaging_materials: "Packaging materials",
+  reverse_logistics: "Reverse logistics",
+  fleet_maintenance: "Fleet maintenance",
+  it_and_wms_software: "IT & WMS software",
+  cleaning_and_facilities: "Cleaning & facilities",
+};
 const dateFormat = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" });
+
+function categoryLabel(value) {
+  return CATEGORY_LABELS[value] || value;
+}
 
 /** Calls the API and returns parsed JSON; throws an Error with a readable message on failure. */
 async function api(path, options = {}) {
@@ -38,7 +53,11 @@ function describeError(body, status) {
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail)) {
     return detail
-      .map((issue) => `${issue.loc.slice(1).join(".") || "request"}: ${issue.msg}`)
+      .map((issue) => {
+        const field = issue.loc.slice(1).join(".");
+        const message = issue.msg.replace(/^Value error, /, "");
+        return field ? `${field}: ${message}` : message;
+      })
       .join("; ");
   }
   return `Request failed (${status})`;
@@ -64,10 +83,15 @@ function renderRow(supplier) {
   const row = document.createElement("tr");
 
   const nameCell = document.createElement("td");
-  nameCell.append(el("span", "order-id", supplier.name), el("span", "order-brand", `ID ${supplier.id}`));
+  nameCell.append(
+    el("span", "order-id", supplier.name),
+    el("span", "order-brand", supplier.service_zone || `ID ${supplier.id}`),
+  );
+  const details = [supplier.notes, supplier.contact_email].filter(Boolean).join(" · ");
+  if (details) nameCell.title = details;
 
   const categoriesCell = document.createElement("td");
-  categoriesCell.append(...supplier.categories.map((category) => el("span", "tag", category)));
+  categoriesCell.append(...supplier.categories.map((category) => el("span", "tag", categoryLabel(category))));
 
   const rateCell = document.createElement("td");
   const rateForm = el("form", "rate-form");
@@ -75,11 +99,11 @@ function renderRow(supplier) {
   rateInput.type = "number";
   rateInput.min = "0";
   rateInput.step = "0.01";
-  rateInput.value = supplier.unit_rate_eur;
-  rateInput.setAttribute("aria-label", `Rate for ${supplier.name}`);
+  rateInput.value = supplier.rate_per_shipment;
+  rateInput.setAttribute("aria-label", `Rate for ${supplier.name} in ${supplier.currency}`);
   const rateButton = el("button", "small-button", "Update");
   rateButton.type = "submit";
-  rateForm.append(rateInput, rateButton);
+  rateForm.append(rateInput, el("span", "currency", supplier.currency), rateButton);
   rateForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const rate = Number(rateInput.value);
@@ -87,7 +111,7 @@ function renderRow(supplier) {
       showApiError(`Rate for ${supplier.name} must be greater than zero.`);
       return;
     }
-    await mutate(`/suppliers/${supplier.id}/rate`, { unit_rate_eur: rate });
+    await mutate(`/suppliers/${supplier.id}/rate`, { rate_per_shipment: rate });
   });
   rateCell.append(rateForm);
 
@@ -167,7 +191,7 @@ async function loadCountries() {
 
 async function loadCategories() {
   const categories = await api("/categories");
-  els.categoryFilter.replaceChildren(new Option("All categories", ""), ...categories.map((c) => new Option(c, c)));
+  els.categoryFilter.replaceChildren(new Option("All categories", ""), ...categories.map((c) => new Option(categoryLabel(c), c)));
   els.categoryOptions.replaceChildren(
     ...categories.map((category) => {
       const label = el("label", "check");
@@ -175,7 +199,7 @@ async function loadCategories() {
       input.type = "checkbox";
       input.name = "categories";
       input.value = category;
-      label.append(input, document.createTextNode(` ${category}`));
+      label.append(input, document.createTextNode(` ${categoryLabel(category)}`));
       return label;
     }),
   );
@@ -196,19 +220,29 @@ function showFormError(message) {
 function validateForm(data) {
   if (!data.name) return "Name is required.";
   if (!data.country) return "Country is required.";
-  if (data.categories.length === 0) return "Select at least one product category.";
-  if (!(data.unit_rate_eur > 0)) return "Rate must be a number greater than zero.";
+  if (data.categories.length === 0) return "Select at least one category.";
+  if (!(data.rate_per_shipment > 0)) return "Rate must be a number greater than zero.";
+  if (data.contact_email && !EMAIL_PATTERN.test(data.contact_email)) return "Contact email is not valid.";
   return null;
+}
+
+/** Keeps the read-only currency field in sync with the chosen country. */
+function syncCurrency() {
+  document.querySelector("#currencyInput").value = CURRENCY_BY_COUNTRY[document.querySelector("#countryInput").value] || "";
 }
 
 els.form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = {
     name: document.querySelector("#nameInput").value.trim(),
-    country: document.querySelector("#countryInput").value.trim(),
+    country: document.querySelector("#countryInput").value,
     categories: [...els.form.querySelectorAll("input[name=categories]:checked")].map((box) => box.value),
-    unit_rate_eur: Number(document.querySelector("#rateInput").value),
+    rate_per_shipment: Number(document.querySelector("#rateInput").value),
+    currency: document.querySelector("#currencyInput").value,
     status: document.querySelector("#statusInput").value,
+    service_zone: document.querySelector("#zoneInput").value.trim() || null,
+    contact_email: document.querySelector("#emailInput").value.trim() || null,
+    notes: document.querySelector("#notesInput").value.trim() || null,
   };
   const problem = validateForm(data);
   if (problem) {
@@ -219,6 +253,7 @@ els.form.addEventListener("submit", async (event) => {
     await api("/suppliers", { method: "POST", body: JSON.stringify(data) });
     showFormError("");
     els.form.reset();
+    syncCurrency();
     setFormOpen(false);
     await loadCountries();
     await loadSuppliers();
@@ -228,8 +263,10 @@ els.form.addEventListener("submit", async (event) => {
 });
 
 document.querySelector("#toggleFormButton").addEventListener("click", () => setFormOpen(els.form.hidden));
+document.querySelector("#countryInput").addEventListener("change", syncCurrency);
 document.querySelector("#cancelFormButton").addEventListener("click", () => {
   els.form.reset();
+  syncCurrency();
   showFormError("");
   setFormOpen(false);
 });

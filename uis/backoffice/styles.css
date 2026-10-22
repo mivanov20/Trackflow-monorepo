@@ -244,3 +244,7 @@ td { height: 59px; padding: 0 12px; border-top: 1px solid #edf0ed; color: #66736
 td .status + .small-button { margin-left: 10px; }
 @media (max-width: 1100px) { .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 720px) { .form-grid { grid-template-columns: 1fr; } table { min-width: 880px; } }
+.supplier-form label.wide { grid-column: 1 / -1; }
+.supplier-form input[readonly] { background: #f3f6f2; color: #66736b; }
+.rate-form .currency { margin-left: 6px; color: #8a958e; font: 9px var(--mono); }
+.row-suspended td { color: #7d6f6c; }

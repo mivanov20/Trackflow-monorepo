@@ -25,4 +25,4 @@ Milestone 4: establish AI-agent context and delivery conventions, keep the publi
 ## Project 7: Supplier Directory (branch `Supplier-Directory`)
 
 - `services/supplier-directory/` implements the supplier API with seeder and tests; `uis/backoffice/suppliers.html` is the supplier page, linked from the backoffice menu.
-- Supplier data (11 sample suppliers in the United States and Spain) was invented because `CONTEXT.md` has no supplier list; replace `data/suppliers_seed.json` if the instructor provides real data.
+- The supplier model and the 15 seed suppliers (in `supplier_directory/seed.py`) follow the project brief supplied by the course; they are not in the general `CONTEXT.md`. `updated_at` tracks only the last rate update; currency must match country.

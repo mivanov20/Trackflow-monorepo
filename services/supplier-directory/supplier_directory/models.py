@@ -1,9 +1,27 @@
 """Pydantic models for the TrackFlow supplier directory."""
 
+import re
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+class Country(str, Enum):
+    """Contract countries."""
+
+    USA = "USA"
+    SPAIN = "Spain"
+
+
+class Currency(str, Enum):
+    """Contract currencies."""
+
+    USD = "USD"
+    EUR = "EUR"
+
+
+CURRENCY_BY_COUNTRY = {Country.USA: Currency.USD, Country.SPAIN: Currency.EUR}
 
 
 class SupplierStatus(str, Enum):
@@ -14,14 +32,19 @@ class SupplierStatus(str, Enum):
 
 
 class SupplierCategory(str, Enum):
-    """Product categories TrackFlow procures for its two warehouses."""
+    """Valid supplier categories (type of service or product supplied)."""
 
-    PACKAGING = "Packaging"
-    PALLETS = "Pallets"
-    LABELS = "Labels & Printing"
-    STRETCH_WRAP = "Stretch Wrap"
-    HANDLING_EQUIPMENT = "Handling Equipment"
-    SAFETY_GEAR = "Safety Gear"
+    CARRIER_LAST_MILE = "carrier_last_mile"
+    CARRIER_INTERNATIONAL = "carrier_international"
+    WAREHOUSE_SUPPLIES = "warehouse_supplies"
+    PACKAGING_MATERIALS = "packaging_materials"
+    REVERSE_LOGISTICS = "reverse_logistics"
+    FLEET_MAINTENANCE = "fleet_maintenance"
+    IT_AND_WMS_SOFTWARE = "it_and_wms_software"
+    CLEANING_AND_FACILITIES = "cleaning_and_facilities"
+
+
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class SupplierBase(BaseModel):
@@ -30,16 +53,41 @@ class SupplierBase(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     name: str = Field(min_length=1, max_length=120)
-    country: str = Field(min_length=1, max_length=80)
+    country: Country
     categories: list[SupplierCategory] = Field(min_length=1)
-    unit_rate_eur: float = Field(gt=0, description="Current price per unit in EUR")
-    status: SupplierStatus = SupplierStatus.ACTIVE
+    rate_per_shipment: float = Field(gt=0, description="Current rate per shipment or service unit")
+    currency: Currency
+    status: SupplierStatus
+    service_zone: str | None = Field(default=None, max_length=120)
+    contact_email: str | None = Field(default=None, max_length=254)
+    notes: str | None = Field(default=None, max_length=500)
 
     @field_validator("categories")
     @classmethod
     def categories_must_be_unique(cls, value: list[SupplierCategory]) -> list[SupplierCategory]:
         """Drop repeated categories while keeping the original order."""
         return list(dict.fromkeys(value))
+
+    @field_validator("service_zone", "contact_email", "notes")
+    @classmethod
+    def blank_optional_becomes_none(cls, value: str | None) -> str | None:
+        """Treat empty optional text as not provided."""
+        return value or None
+
+    @field_validator("contact_email")
+    @classmethod
+    def email_must_look_valid(cls, value: str | None) -> str | None:
+        if value is not None and not EMAIL_PATTERN.match(value):
+            raise ValueError("must be a valid email address")
+        return value
+
+    @model_validator(mode="after")
+    def currency_must_match_country(self) -> "SupplierBase":
+        """USA suppliers are paid in USD and Spain suppliers in EUR."""
+        expected = CURRENCY_BY_COUNTRY[self.country]
+        if self.currency != expected:
+            raise ValueError(f"currency must be {expected.value} for country {self.country.value}")
+        return self
 
 
 class SupplierCreate(SupplierBase):
@@ -49,7 +97,7 @@ class SupplierCreate(SupplierBase):
 class SupplierRateUpdate(BaseModel):
     """Input model for PATCH /suppliers/{id}/rate."""
 
-    unit_rate_eur: float = Field(gt=0)
+    rate_per_shipment: float = Field(gt=0)
 
 
 class SupplierStatusUpdate(BaseModel):
@@ -59,7 +107,7 @@ class SupplierStatusUpdate(BaseModel):
 
 
 class Supplier(SupplierBase):
-    """Response model: a stored supplier with its TinyDB ID and audit timestamp."""
+    """Response model: a stored supplier with its TinyDB ID and last rate update."""
 
     id: int
     updated_at: datetime

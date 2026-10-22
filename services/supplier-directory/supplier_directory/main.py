@@ -86,7 +86,7 @@ def update_rate(
     repo: SupplierRepository = Depends(get_repository),
 ):
     _get_or_404(repo, supplier_id)
-    return repo.update_rate(supplier_id, body.unit_rate_eur)
+    return repo.update_rate(supplier_id, body.rate_per_shipment)
 
 
 @app.patch("/suppliers/{supplier_id}/status", response_model=Supplier)

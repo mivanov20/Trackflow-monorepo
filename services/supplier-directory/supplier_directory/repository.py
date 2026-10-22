@@ -61,18 +61,21 @@ class SupplierRepository:
             doc = self._db.get(doc_id=supplier_id)
         return self._to_model(doc) if doc else None
 
-    def update_rate(self, supplier_id: int, unit_rate_eur: float) -> Supplier | None:
-        """Change the rate and record when it happened."""
-        return self._update(supplier_id, {"unit_rate_eur": unit_rate_eur})
+    def update_rate(self, supplier_id: int, rate_per_shipment: float) -> Supplier | None:
+        """Change the rate and record when it happened (rate traceability)."""
+        return self._update(supplier_id, {"rate_per_shipment": rate_per_shipment}, touch=True)
 
     def update_status(self, supplier_id: int, status: SupplierStatus) -> Supplier | None:
-        return self._update(supplier_id, {"status": status.value})
+        return self._update(supplier_id, {"status": status.value}, touch=False)
 
-    def _update(self, supplier_id: int, fields: dict) -> Supplier | None:
+    def _update(self, supplier_id: int, fields: dict, touch: bool) -> Supplier | None:
+        """Apply `fields`; `updated_at` (last rate update) only moves when `touch` is set."""
         with self._lock:
             if not self._db.contains(doc_id=supplier_id):
                 return None
-            self._db.update({**fields, "updated_at": _now().isoformat()}, doc_ids=[supplier_id])
+            if touch:
+                fields = {**fields, "updated_at": _now().isoformat()}
+            self._db.update(fields, doc_ids=[supplier_id])
             return self._to_model(self._db.get(doc_id=supplier_id))
 
     def delete(self, supplier_id: int) -> bool:
