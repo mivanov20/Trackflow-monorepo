@@ -26,3 +26,9 @@ Open `http://localhost:8081`.
 - Filter sample rows by warehouse and shipment status.
 - Use `/` to focus search and the refresh control to update the local display timestamp.
 - Summary cards update with the active filters and count only the local sample records.
+
+## Supplier directory
+
+`suppliers.html` is the supplier directory, linked from the **Suppliers** menu item. Unlike the overview, it reads and writes live data through the supplier API in `services/supplier-directory` (default `http://localhost:8000`, overridable with `window.SUPPLIER_API_URL`). Start the API first (see that service's README), then serve this folder as above and open `http://localhost:8081/suppliers.html`.
+
+It supports country and category filters, registering a supplier (the currency is set from the country, and API errors are shown), updating a per-shipment rate, and suspending or activating a supplier. Active and suspended suppliers use different badges and row styles.

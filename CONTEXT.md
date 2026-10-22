@@ -119,3 +119,66 @@ _For exclusive use in programme project generation_
 ## Editorial resolution
 
 The Executive Direction section originally identified Daniel Espinoza as CEO, conflicting with the company overview and Executive Leadership sections, which identify Thomas Harry as founder and CEO and as the executive leader. This briefing resolves the title in favor of Thomas Harry; Daniel is identified as the person who created TrackFlow Tech, with no executive title stated.
+
+---
+
+## Supplier Directory (project brief)
+
+TrackFlow works with a network of suppliers that includes carriers, warehouse supplies, packaging, and operational software. Each country negotiates with its own suppliers and manages contracts independently, so neither Carlos Vega (Head of Carrier Operations) nor Ana Whitfield (Head of Warehouse Operations) has visibility into the full directory: each maintains their own spreadsheet. The supplier directory is the centralized registry that unifies both markets. The tech lead is Andrés Kim (CTO).
+
+### Supplier model
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `name` | string, required | Supplier trade name |
+| `country` | string, required | Contract country: `USA` or `Spain` |
+| `categories` | list of strings, required, minimum 1 | Type of service or product supplied (see valid list) |
+| `rate_per_shipment` | float, required, > 0 | Current rate per shipment or service unit in the contract currency |
+| `currency` | string, required | `USD` for USA, `EUR` for Spain |
+| `updated_at` | datetime, system-generated | Timestamp of the last rate update |
+| `status` | string, required | `active` or `suspended` |
+| `service_zone` | string, optional | Supplier coverage zone (for example `West Coast`, `Aragón`) |
+| `contact_email` | string, optional | Supplier contact email |
+| `notes` | string, optional | Operations team notes |
+
+**Valid categories:** `carrier_last_mile`, `carrier_international`, `warehouse_supplies`, `packaging_materials`, `reverse_logistics`, `fleet_maintenance`, `it_and_wms_software`, `cleaning_and_facilities`.
+
+**Valid statuses:** `active`, `suspended`.
+
+### Seeder initial data
+
+The seeder loads exactly these 15 suppliers, the combined current directory of Carlos and Ana. The full records (zones, contact emails and notes) are in `services/supplier-directory/supplier_directory/seed.py`.
+
+| Name | Country | Categories | Rate | Currency | Status |
+| --- | --- | --- | --- | --- | --- |
+| UPS Ground | USA | carrier_last_mile | 7.45 | USD | active |
+| FedEx Ground | USA | carrier_last_mile | 7.90 | USD | active |
+| DHL Express USA | USA | carrier_last_mile, carrier_international | 14.20 | USD | active |
+| OnTrac | USA | carrier_last_mile | 6.10 | USD | active |
+| Laser Ship | USA | carrier_last_mile | 5.80 | USD | suspended |
+| PackSource LA | USA | packaging_materials | 0.42 | USD | active |
+| CleanTeam West | USA | cleaning_and_facilities | 1800.00 | USD | active |
+| MRW España | Spain | carrier_last_mile | 4.90 | EUR | active |
+| SEUR | Spain | carrier_last_mile | 5.20 | EUR | active |
+| DHL Express España | Spain | carrier_last_mile, carrier_international | 12.80 | EUR | active |
+| Nacex | Spain | carrier_last_mile | 4.60 | EUR | active |
+| Logística Inversa Iberia | Spain | reverse_logistics | 6.30 | EUR | active |
+| Embalajes Zaragoza S.L. | Spain | packaging_materials | 0.28 | EUR | active |
+| SAP WM Cloud | USA | it_and_wms_software | 2200.00 | USD | suspended |
+| ReturnBear | USA | reverse_logistics | 4.15 | USD | active |
+
+### Business constraints
+
+- **Currency by country:** a supplier from `USA` must have `currency = USD`. A supplier from `Spain` must have `currency = EUR`. The API rejects inconsistent combinations.
+- **Rate traceability:** every update to `rate_per_shipment` must automatically record `updated_at`. Carlos uses this history to review cost evolution by carrier.
+- **Suspension for incidents:** the usual TrackFlow workflow is to suspend suppliers with a high incident rate, not delete them. Suspension history is operationally relevant information.
+- **Dual-category carriers:** it is valid for a carrier to operate in both last mile and international (like DHL). The `categories` field accepts multiple values simultaneously.
+
+### What Carlos sees in the backoffice
+
+- All suppliers with their categories, rate, and status at a glance.
+- A country filter (USA / Spain) to manage each market separately.
+- A category filter to answer questions like "what active carriers do we have in Spain?".
+- A form to register a new supplier.
+- Rate updates reflected immediately.
+- A visible control in each row to suspend or reactivate a supplier.
