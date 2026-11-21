@@ -31,12 +31,15 @@ const FILTER_FIELDS = [
   { name: "category", label: "Category", all: "All categories", options: CATEGORIES.map((value) => [value, CATEGORY_LABELS[value]]) },
 ] as const;
 
-function SummaryGroup({ title, counts, labels }: { title: string; counts: Record<string, number>; labels: Record<string, string> }) {
+function SummaryGroup({ title, counts, labels }: { title: string; counts?: Record<string, number> | null; labels: Record<string, string> }) {
+  // Si la API omite un grupo, se muestra vacío en lugar de romper el render.
+  const entries = Object.entries(counts ?? {});
   return (
     <div className="incident-summary-group">
       <h3>{title}</h3>
+      {entries.length === 0 && <p className="incident-muted">No data available.</p>}
       <dl>
-        {Object.entries(counts).map(([key, count]) => (
+        {entries.map(([key, count]) => (
           <div key={key} className={count === 0 ? "incident-zero" : undefined}>
             <dt>{labels[key] ?? key}</dt>
             <dd>{count}</dd>
@@ -45,6 +48,12 @@ function SummaryGroup({ title, counts, labels }: { title: string; counts: Record
       </dl>
     </div>
   );
+}
+
+/** Fecha legible; un valor ausente o inválido no muestra "Invalid Date". */
+function formatCreated(value: string | null | undefined): string {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime()) ? date.toLocaleString() : "—";
 }
 
 export default function IncidentsPage() {
@@ -138,7 +147,7 @@ export default function IncidentsPage() {
       <section className="inventory-table-section incident-summary" aria-labelledby="incident-summary-heading" aria-busy={summaryState === "loading"}>
         <div className="incident-section-title">
           <h2 id="incident-summary-heading">Summary</h2>
-          {summaryState === "ready" && summary && <span className="incident-muted">{summary.total} incident{summary.total === 1 ? "" : "s"} in total</span>}
+          {summaryState === "ready" && summary && <span className="incident-muted">{summary.total ?? 0} incident{summary.total === 1 ? "" : "s"} in total</span>}
         </div>
         {summaryState === "loading" && <p className="incident-state" role="status"><span className="incident-spinner incident-spinner-dark" aria-hidden="true" /> Loading summary…</p>}
         {summaryState === "error" && (
@@ -197,7 +206,8 @@ export default function IncidentsPage() {
               <thead><tr><th>INCIDENT</th><th>CATEGORY</th><th>ORIGIN</th><th>BRANCH</th><th>STATUS</th><th>CREATED</th></tr></thead>
               <tbody>
                 {incidents.map((incident) => {
-                  const next = STATUS_TRANSITIONS[incident.status];
+                  // Un estado desconocido se trata como final: sin transiciones, en lugar de fallar.
+                  const next = STATUS_TRANSITIONS[incident.status] ?? [];
                   const shown = pending[incident.id] ?? incident.status;
                   return (
                     <tr key={incident.id}>
@@ -205,9 +215,9 @@ export default function IncidentsPage() {
                         <strong>{incident.title}</strong>
                         <span className="inventory-code">#{incident.id}</span>
                       </td>
-                      <td>{CATEGORY_LABELS[incident.category]}</td>
-                      <td>{ORIGIN_LABELS[incident.origin]}</td>
-                      <td>{BRANCH_LABELS[incident.branch]}</td>
+                      <td>{CATEGORY_LABELS[incident.category] ?? incident.category ?? "—"}</td>
+                      <td>{ORIGIN_LABELS[incident.origin] ?? incident.origin ?? "—"}</td>
+                      <td>{BRANCH_LABELS[incident.branch] ?? incident.branch ?? "—"}</td>
                       <td>
                         <select
                           className={`incident-status-select incident-status-${shown}`}
@@ -217,10 +227,10 @@ export default function IncidentsPage() {
                           title={next.length === 0 ? "Final status: it can no longer change." : undefined}
                           onChange={(event) => void changeStatus(incident, event.target.value as IncidentStatus)}
                         >
-                          {[incident.status, ...next].map((value) => <option key={value} value={value}>{STATUS_LABELS[value]}</option>)}
+                          {[incident.status, ...next].map((value) => <option key={value} value={value}>{STATUS_LABELS[value] ?? value}</option>)}
                         </select>
                       </td>
-                      <td>{new Date(incident.created_at).toLocaleString()}</td>
+                      <td>{formatCreated(incident.created_at)}</td>
                     </tr>
                   );
                 })}

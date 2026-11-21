@@ -43,24 +43,38 @@
 
   // FastAPI returns `detail` either as a string or as a list of validation errors.
   function readErrorMessage(payload, status) {
+    // 5xx: never forward the server text (it may be a stack trace or an HTML error page).
+    if (status >= 500) return "The server is having trouble right now. Please try again.";
     if (payload && typeof payload.detail === "string") return payload.detail;
     if (payload && Array.isArray(payload.detail)) {
       const first = payload.detail[0];
       if (first && first.msg) {
         const field = Array.isArray(first.loc) ? first.loc[first.loc.length - 1] : "";
-        return field ? `${field}: ${first.msg}` : first.msg;
+        return field
+          ? `Please check the ${String(field).replace(/_/g, " ")} field and try again.`
+          : "Some of the information is not valid. Please review the form and try again.";
       }
     }
     if (status === 404) return "The requested record no longer exists.";
-    if (status >= 500) return "The server is having trouble right now. Please try again.";
-    return `Request failed with status ${status}.`;
+    return "The request could not be completed. Please try again.";
+  }
+
+  function plainFieldMessage(item) {
+    const type = String((item && item.type) || "");
+    if (type === "missing") return "This field is required.";
+    if (type.includes("email")) return "Enter a valid email address.";
+    if (type.includes("url")) return "Enter a valid http(s) link.";
+    if (type.includes("int") || type.includes("float") || type.includes("number")) return "Enter a valid number.";
+    if (type.includes("too_short") || type.includes("too_long")) return "This value has the wrong length.";
+    return "This value is not valid.";
   }
 
   function fieldErrorsFrom(payload) {
     if (!payload || !Array.isArray(payload.detail)) return {};
     return payload.detail.reduce((acc, item) => {
       const field = Array.isArray(item.loc) ? item.loc[item.loc.length - 1] : null;
-      if (field && !acc[field]) acc[field] = item.msg;
+      // Plain language per field: raw Pydantic text ("value is not a valid ...") is never shown.
+      if (field && !acc[field]) acc[field] = plainFieldMessage(item);
       return acc;
     }, {});
   }

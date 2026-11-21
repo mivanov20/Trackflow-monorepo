@@ -4,6 +4,26 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { websiteCopy, type ContentCardData, type Language, type SnapshotStatData } from "./copy";
 
+const LANGUAGE_KEY = "trackflow-lang";
+
+/** Lee el idioma guardado; si el navegador bloquea localStorage se usa inglés sin romper la página. */
+export function readSavedLanguage(): Language {
+  try {
+    return window.localStorage.getItem(LANGUAGE_KEY) === "es" ? "es" : "en";
+  } catch {
+    return "en";
+  }
+}
+
+/** Guarda el idioma elegido; si no se puede persistir, el cambio sigue aplicándose en la sesión actual. */
+export function saveLanguage(language: Language): void {
+  try {
+    window.localStorage.setItem(LANGUAGE_KEY, language);
+  } catch {
+    // Almacenamiento no disponible (modo privado o cuota llena).
+  }
+}
+
 interface SiteHeaderProps {
   copy: (typeof websiteCopy)[Language];
   language: Language;
@@ -88,8 +108,7 @@ export function WebsiteHome() {
   const copy = websiteCopy[language];
 
   useEffect(() => {
-    const savedLanguage = window.localStorage.getItem("trackflow-lang");
-    if (savedLanguage === "es") {
+    if (readSavedLanguage() === "es") {
       document.documentElement.lang = "es";
       setLanguage("es");
     }
@@ -97,7 +116,7 @@ export function WebsiteHome() {
 
   function toggleLanguage() {
     const nextLanguage = language === "en" ? "es" : "en";
-    window.localStorage.setItem("trackflow-lang", nextLanguage);
+    saveLanguage(nextLanguage);
     document.documentElement.lang = nextLanguage;
     setLanguage(nextLanguage);
   }

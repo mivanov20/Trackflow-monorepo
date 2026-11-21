@@ -1,8 +1,10 @@
-from tinydb import TinyDB
+import sys
+
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, select
+from tinydb import TinyDB
 
 from services.auth import _users_path
-from services.database import create_db_and_tables, engine
 from services.models import SKU, StockEntry, StockExit
 
 SKU_SEED = [
@@ -16,9 +18,18 @@ SKU_SEED = [
 
 
 def seed_development_inventory() -> None:
-    """Carga datos de desarrollo después de registrar un usuario operativo real."""
-    with TinyDB(_users_path()) as users_db:
-        users = users_db.all()
+    """Carga datos de desarrollo después de registrar un usuario operativo real.
+
+    Lanza RuntimeError con un mensaje seguro si falta configuración o la cuenta operativa.
+    """
+    # Import diferido: services.database lanza RuntimeError si falta DATABASE_URL.
+    from services.database import create_db_and_tables, engine
+
+    try:
+        with TinyDB(_users_path()) as users_db:
+            users = users_db.all()
+    except (OSError, ValueError) as error:  # ValueError cubre un users.json corrupto
+        raise RuntimeError("Could not read the operative account store. Check AUTH_DB_PATH and the file permissions.") from error
     if not users:
         raise RuntimeError("Register an operative with POST /auth/register before seeding inventory.")
     user_uuid = users[0]["user_uuid"]
@@ -64,6 +75,20 @@ def seed_development_inventory() -> None:
         session.commit()
 
 
-if __name__ == "__main__":
-    seed_development_inventory()
+def main() -> int:
+    """Ejecuta el seed desde la línea de comandos y devuelve el código de salida."""
+    try:
+        seed_development_inventory()
+    except RuntimeError as error:
+        print(f"Seed failed: {error}", file=sys.stderr)
+        return 1
+    except SQLAlchemyError as error:
+        # Solo el tipo: el mensaje de SQLAlchemy puede incluir host o usuario de la base.
+        print(f"Seed failed: database error ({type(error).__name__}). Check DATABASE_URL and that the database is reachable.", file=sys.stderr)
+        return 1
     print("Development inventory seed complete.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

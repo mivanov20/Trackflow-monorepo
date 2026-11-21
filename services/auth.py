@@ -1,8 +1,11 @@
 import hashlib
 import hmac
+import logging
 import os
 import secrets
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -13,6 +16,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr, Field
 from tinydb import Query, TinyDB
 
+logger = logging.getLogger("services.auth")
 router = APIRouter(prefix="/auth", tags=["authentication"])
 bearer_scheme = HTTPBearer(auto_error=False)
 JWT_ALGORITHM = "HS256"
@@ -36,6 +40,23 @@ def _users_path() -> Path:
     if path.exists():
         path.chmod(0o600)
     return path
+
+
+ACCOUNT_STORE_UNAVAILABLE = "The account service is temporarily unavailable. Please try again in a moment."
+
+
+@contextmanager
+def _users_db() -> Iterator[TinyDB]:
+    """Abre TinyDB y traduce fallos de archivo (I/O o JSON corrupto) a un 503 limpio.
+
+    Solo envuelve el acceso al almacenamiento; los HTTPException del cuerpo pasan intactos.
+    """
+    try:
+        with TinyDB(_users_path()) as database:
+            yield database
+    except (OSError, ValueError) as error:  # JSONDecodeError es subclase de ValueError
+        logger.exception("Account store unavailable")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=ACCOUNT_STORE_UNAVAILABLE) from error
 
 
 def _hash_password(password: str, salt: str | None = None) -> str:
@@ -100,7 +121,7 @@ class TokenResponse(BaseModel):
 def register_user(payload: RegisterRequest) -> dict[str, str]:
     """Registra una cuenta operativa en TinyDB sin crear un usuario SQL."""
     email = str(payload.email).strip().lower()
-    with TinyDB(_users_path()) as database:
+    with _users_db() as database:
         users = Query()
         if database.contains(users.email == email):
             raise HTTPException(status_code=409, detail="An account with this email already exists.")
@@ -119,7 +140,7 @@ def register_user(payload: RegisterRequest) -> dict[str, str]:
 def login_user(payload: LoginRequest) -> dict[str, Any]:
     """Valida credenciales y devuelve un JWT de acceso."""
     email = str(payload.email).strip().lower()
-    with TinyDB(_users_path()) as database:
+    with _users_db() as database:
         user = database.get(Query().email == email)
     if not user or not _password_matches(payload.password, user["password_hash"]):
         raise HTTPException(
@@ -156,7 +177,7 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         ) from error
 
-    with TinyDB(_users_path()) as database:
+    with _users_db() as database:
         user = database.get(Query().user_uuid == user_uuid)
     if user is None:
         raise HTTPException(

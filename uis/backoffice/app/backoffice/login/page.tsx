@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ApiError } from "../../../lib/api-client";
+import { messageFor } from "../../../lib/api-client";
 import { loginUser, registerUser, saveSession } from "../../../lib/auth";
 
 export default function BackofficeLoginPage() {
@@ -26,7 +26,7 @@ export default function BackofficeLoginPage() {
       const allowed = next?.startsWith("/backoffice/inventory/") || next?.startsWith("/backoffice/incidents");
       router.replace(next && allowed ? next : "/backoffice/inventory/products");
     } catch (caught) {
-      setError(caught instanceof ApiError ? caught.message : "Unable to sign in. Please try again.");
+      setError(messageFor(caught, "Unable to sign in. Please try again."));
     } finally {
       setBusy(false);
     }

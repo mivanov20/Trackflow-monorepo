@@ -11,20 +11,43 @@ export class ApiError extends Error {
   }
 }
 
-function errorMessage(body: unknown, statusText: string): string {
-  if (typeof body === "string" && body.trim()) return body;
+export const GENERIC_ERROR_MESSAGE = "Something went wrong on our side. Please try again in a moment.";
+
+const STATUS_MESSAGES: Record<number, string> = {
+  401: "Your session has expired. Please sign in again.",
+  403: "You do not have permission to do this.",
+  404: "The requested record was not found. It may have been removed.",
+  409: "This change conflicts with existing data. Refresh the page and try again.",
+  429: "Too many requests. Wait a moment and try again.",
+  503: "The service is temporarily unavailable. Please try again in a moment.",
+};
+
+/** Convierte un `loc` de validación FastAPI (p. ej. ["body", "tracking_number"]) en una etiqueta legible. */
+function fieldLabel(location: unknown): string {
+  const parts = Array.isArray(location) ? location.filter((part) => typeof part === "string" && part !== "body") : [];
+  const last = parts[parts.length - 1];
+  return typeof last === "string" ? last.replace(/_/g, " ") : "";
+}
+
+/**
+ * Builds a message a user can act on. Server failures (5xx) and unknown bodies never reach the UI
+ * as-is: they are replaced by plain-language text, so status codes, HTML error pages or validation
+ * internals are not shown.
+ */
+function errorMessage(body: unknown, status: number): string {
+  if (status >= 500) return STATUS_MESSAGES[status] ?? GENERIC_ERROR_MESSAGE;
   if (body && typeof body === "object") {
     const record = body as Record<string, unknown>;
-    const detail = record.detail ?? record.message ?? record.error;
-    if (typeof detail === "string") return detail;
+    const detail = record.detail ?? record.message;
+    if (typeof detail === "string" && detail.trim()) return detail;
     if (Array.isArray(detail)) {
-      return detail.map((item) => {
-        if (item && typeof item === "object" && "msg" in item) return String(item.msg);
-        return String(item);
-      }).join(" ");
+      const fields = [...new Set(detail.map((item) => (item && typeof item === "object" ? fieldLabel((item as { loc?: unknown }).loc) : "")).filter(Boolean))];
+      return fields.length > 0
+        ? `Please check these fields and try again: ${fields.join(", ")}.`
+        : "Some of the information sent is not valid. Please review the form and try again.";
     }
   }
-  return statusText || "The request failed. Please try again.";
+  return STATUS_MESSAGES[status] ?? "The request could not be completed. Please review the information and try again.";
 }
 
 /** Reads `{ errors: [{ field, message }] }` (incident API validation errors) into a field map. */
@@ -74,7 +97,7 @@ export async function apiRequest<T>(
     if (caught instanceof DOMException && caught.name === "AbortError") {
       throw new ApiError(`The ${serviceName} service is taking too long to answer. Please try again.`, 0);
     }
-    throw new ApiError(`Cannot reach the ${serviceName} service. Check that the API is running.`, 0);
+    throw new ApiError(`Cannot reach the ${serviceName} service. Check your connection and try again.`, 0);
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -82,13 +105,26 @@ export async function apiRequest<T>(
   const responseBody: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     if (response.status === 401 && options.token && typeof window !== "undefined") {
-      window.localStorage.removeItem("trackflow-access-token");
-      window.localStorage.removeItem("trackflow-auth-user");
+      try {
+        window.localStorage.removeItem("trackflow-access-token");
+        window.localStorage.removeItem("trackflow-auth-user");
+      } catch {
+        // Almacenamiento bloqueado: igualmente se redirige al login.
+      }
       if (PROTECTED_PREFIXES.some((prefix) => window.location.pathname.startsWith(prefix))) {
         window.location.replace(`/backoffice/login?next=${encodeURIComponent(window.location.pathname)}`);
       }
     }
-    throw new ApiError(errorMessage(responseBody, response.statusText), response.status, fieldErrorsFrom(responseBody));
+    throw new ApiError(errorMessage(responseBody, response.status), response.status, fieldErrorsFrom(responseBody));
+  }
+  if (responseBody === null && response.status !== 204) {
+    // Una respuesta 2xx que no es JSON (proxy, página HTML) no debe llegar a la UI como datos.
+    throw new ApiError(GENERIC_ERROR_MESSAGE, response.status);
   }
   return responseBody as T;
+}
+
+/** Message to show for any caught error: API messages are already user-safe; anything else is generic. */
+export function messageFor(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.message : fallback;
 }
