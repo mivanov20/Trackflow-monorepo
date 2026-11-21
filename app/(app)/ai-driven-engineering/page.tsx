@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import Image from "next/image";
-import briefOne from "../../assets/M4 photo1.png";
-import briefTwo from "../../assets/M4 photo2.png";
-import briefThree from "../../assets/M4photo3.png";
-import briefFour from "../../assets/M4photo4.png";
+import briefOne from "../../../assets/M4 photo1.png";
+import briefTwo from "../../../assets/M4 photo2.png";
+import briefThree from "../../../assets/M4photo3.png";
+import briefFour from "../../../assets/M4photo4.png";
 
 export const metadata: Metadata = {
   title: "AI-driven Engineering | Working with AI Coding Agents",
