@@ -30,7 +30,7 @@ class StockEntry(SQLModel, table=True):
     reference: str
     warehouse: str = Field(index=True)
     created_at: datetime = Field(default_factory=utc_now, index=True)
-    user_uuid: str = Field(index=True)
+    user_uid: str = Field(index=True)
 
 
 class StockExit(SQLModel, table=True):
@@ -43,7 +43,7 @@ class StockExit(SQLModel, table=True):
     tracking_number: str | None = None
     warehouse: str = Field(index=True)
     created_at: datetime = Field(default_factory=utc_now, index=True)
-    user_uuid: str = Field(index=True)
+    user_uid: str = Field(index=True)
 
 def _allowed_values(column: str, values) -> CheckConstraint:
     """Build a CHECK constraint restricting `column` to `values`."""

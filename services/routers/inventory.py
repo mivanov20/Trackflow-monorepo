@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlmodel import Session, select
 
+from ..accounts import User
 from ..auth import get_current_user
 from ..database import get_session
 from ..models import SKU, StockEntry, StockExit
@@ -58,7 +59,7 @@ def _order_read(session: Session, movement: StockEntry | StockExit, order_type: 
         "tracking_number": movement.tracking_number if isinstance(movement, StockExit) else None,
         "warehouse": movement.warehouse,
         "created_at": movement.created_at,
-        "user_uuid": movement.user_uuid,
+        "user_uid": movement.user_uid,
         "sku": sku_read(session, sku),
     }
 
@@ -90,11 +91,11 @@ def get_product(sku_id: int, session: Session = Depends(get_session)) -> SKURead
 def create_stock_entry(
     payload: StockEntryCreate,
     session: Session = Depends(get_session),
-    user: dict[str, str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Registra una recepción de inventario asociada al usuario autenticado."""
     _sku_or_404(session, payload.sku_id)
-    movement = StockEntry(**payload.model_dump(), user_uuid=user["user_uuid"])
+    movement = StockEntry(**payload.model_dump(), user_uid=user.id)
     session.add(movement)
     session.commit()
     session.refresh(movement)
@@ -105,7 +106,7 @@ def create_stock_entry(
 def create_stock_exit(
     payload: StockExitCreate,
     session: Session = Depends(get_session),
-    user: dict[str, str] = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Registra una salida tras validar stock y tipo de movimiento."""
     sku = _sku_or_404(session, payload.sku_id, lock=True)
@@ -115,7 +116,7 @@ def create_stock_exit(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Insufficient stock for SKU '{sku.sku}'. Available: {available}, requested: {payload.quantity}.",
         )
-    movement = StockExit(**payload.model_dump(), user_uuid=user["user_uuid"])
+    movement = StockExit(**payload.model_dump(), user_uid=user.id)
     session.add(movement)
     session.commit()
     session.refresh(movement)

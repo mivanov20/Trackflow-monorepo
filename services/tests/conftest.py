@@ -7,6 +7,7 @@ from pathlib import Path
 # Set before `services` is imported: the database module reads these at import time.
 os.environ.setdefault("DATABASE_URL", "sqlite://")
 os.environ.setdefault("JWT_SECRET", "test-only-secret-with-at-least-32-characters")
+os.environ.setdefault("BCRYPT_ROUNDS", "4")  # tests: bcrypt rápido
 
 # Make the repo-level scripts/ folder importable (seed_incidents lives there).
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
