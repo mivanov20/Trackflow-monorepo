@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChangeEvent, useEffect, useState, useTransition } from "react";
-import { candidateName, candidatePosition, createCandidate, getCandidates, humanize } from "../lib/candidates";
+import { candidateErrorMessage, candidateName, candidatePosition, createCandidate, getCandidates, humanize } from "../lib/candidates";
 import { CANDIDATE_STAGES, CANDIDATE_STATUSES, Candidate, CandidatePayload } from "../types/candidates";
 import CandidateForm from "./CandidateForm";
 
@@ -34,19 +34,20 @@ export default function CandidateList() {
     async function loadCandidates() {
       setFetchStatus("loading");
       setError("");
+      let outcome: "success" | "error" = "error";
 
       try {
         const records = await getCandidates({ status, stage, search });
-        if (!controller.signal.aborted) {
-          setCandidates(records);
-          setFetchStatus("success");
-        }
+        if (!controller.signal.aborted) setCandidates(records);
+        outcome = "success";
       } catch (loadError) {
         if (!controller.signal.aborted) {
           setCandidates([]);
-          setError(loadError instanceof Error ? loadError.message : "We couldn't load candidates.");
-          setFetchStatus("error");
+          setError(candidateErrorMessage(loadError, "We couldn't load candidates."));
         }
+      } finally {
+        // El estado de carga se cierra siempre aquí; una petición cancelada no pisa a la nueva.
+        if (!controller.signal.aborted) setFetchStatus(outcome);
       }
     }
 
@@ -82,7 +83,7 @@ export default function CandidateList() {
     } catch (submitError) {
       setFormFeedback({
         type: "error",
-        message: submitError instanceof Error ? submitError.message : "Candidate could not be registered.",
+        message: candidateErrorMessage(submitError, "Candidate could not be registered."),
       });
     }
   }
@@ -95,7 +96,7 @@ export default function CandidateList() {
     <section className="list-panel" aria-labelledby="candidate-list-heading">
       <div className="panel-heading">
         <h2 id="candidate-list-heading">Candidate list</h2>
-        <span>{isLoading ? "Loading..." : `${candidates.length} total`}</span>
+        <span>{isLoading ? "Loading..." : isError ? "Unavailable" : `${candidates.length} total`}</span>
       </div>
 
       <div className="management-bar">
@@ -147,7 +148,14 @@ export default function CandidateList() {
       </div>
 
       {isLoading ? <p className="empty-state">Loading candidates...</p> : null}
-      {isError ? <p className="error-state">{error}</p> : null}
+      {isError ? (
+        <div className="error-state" role="alert">
+          <p>{error}</p>
+          <button type="button" onClick={() => setRefreshToken((current) => current + 1)}>
+            Try again
+          </button>
+        </div>
+      ) : null}
 
       {isSuccess && candidates.length ? (
         <ul className="candidate-list">

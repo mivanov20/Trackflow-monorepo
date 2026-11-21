@@ -1,3 +1,15 @@
 node_modules/
 .next/
 tsconfig.tsbuildinfo
+.env.local
+.env.*.local
+.env
+.venv/
+services/data/
+services/*.db
+services/*.db-*
+**/__pycache__/
+test_inventory.db
+
+# Real incident export contains personal data; never commit it
+data/raw/incidents-trackflow.csv
