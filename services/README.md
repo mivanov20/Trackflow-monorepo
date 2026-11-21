@@ -112,6 +112,19 @@ Incident endpoints always answer in JSON, never with a stack trace:
 
 The enums, lifecycle rules, payload validation and the analyzer-CSV validation and transformation live in `packages/shared/trackflow_shared/incidents.py` (a Python package next to the TypeScript types). The API and `scripts/seed_incidents.py` both import it. `services/requirements.txt` installs it with `-e ./packages/shared`. Its own tests: `cd packages/shared && python -m pytest`.
 
+### Incident file analysis
+
+`POST /api/incidents/analyze` and `GET /api/incidents/results/export` analyse the after-sales incident CSV with the same code as `scripts/analyze.py` (`trackflow_shared/incident_analysis.py`); the backoffice page is `/backoffice/incidents/analyze`. Both routes require the bearer JWT.
+
+| Endpoint | Behaviour |
+| --- | --- |
+| `POST /api/incidents/analyze` | Body `multipart/form-data` with the CSV in the field `file`. Returns the summary as JSON: totals, the count per invalid rule with the line numbers of invalid records, category / status / country breakdowns (with percentages over valid records) and the satisfaction index (average, distribution, by country and by category). |
+| `GET /api/incidents/results/export` | The caller's last analysis as a download `results.csv` (`metric,value`, one row per metric). `404` (`no_analysis`) if there is none yet. |
+
+Errors use the incident format (`{"error", "message"}`): `400` empty file or no `file` field, `413` file over the limit, `415` not `multipart/form-data` or not a `.csv`, `422` content that cannot be analysed (missing columns, wrong separator, not UTF-8, no data rows).
+
+The upload limit is `ANALYSIS_MAX_UPLOAD_MB` (default 250, about a million rows). The file is read as a stream from a temporary file that is deleted afterwards; only the aggregate numbers of each user's last analysis are kept, in memory, so they are lost when the API restarts. The file contains customer emails: no cell value is ever returned, exported or logged.
+
 ### Seed the historical incidents
 
 From the repository root, with `DATABASE_URL` set as for the API (for local use, `sqlite:///./services/dev.db` works):

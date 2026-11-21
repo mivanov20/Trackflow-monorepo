@@ -39,3 +39,9 @@ Milestone 5: migrate the public site and backoffice, then implement operative au
 - The real `incidents-trackflow.csv` and the analyzer project's code were not available. CSV columns (`incident_id`, `description`, `date`, `status`, `category`, `country`) come from the briefing's mappings, and tests use a synthetic 95-valid-row CSV. Seeding totals against the real file are unverified.
 - Verified locally against SQLite; not run against a live Supabase `DATABASE_URL`.
 - Screenshots for the PR are in `docs/incident-manager/`.
+
+## Incident File Analyzer (branch `Incident-File-Analyzer`)
+
+- Script, shared logic, API endpoints and the backoffice page are in place. Verified against a synthetic file that reproduces the briefing's numbers exactly (100 records, 95 valid, 5 invalid with one per rule, categories 14/38/19/17/7, statuses 29/52/14, countries 50/45, 52 scored, average 3.06).
+- NOT verified: the real `incidents-trackflow.csv`. It contains customer emails and was deliberately not read. Run `python scripts/analyze.py data/raw/incidents-trackflow.csv` and compare with the briefing.
+- The briefing mentions a 1,000-row test file in one place and 100 rows in the data section; the expected values are for 100 rows.
