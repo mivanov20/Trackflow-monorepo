@@ -69,3 +69,55 @@ def test_promote_user_script_sets_the_role_and_reports_errors(tmp_path, monkeypa
     assert promote_main(["promote_user.py", "alice@example.com", "user"]) == 1  # última admin
     assert "without an active administrator" in capsys.readouterr().err
     assert promote_main(["promote_user.py"]) == 1
+
+
+# --- usabilidad del script de migración -------------------------------------------
+
+
+def test_dry_run_reports_the_changes_without_applying_them():
+    engine = legacy_engine()
+    assert migrate(engine, dry_run=True) == ["stockentry: user_uuid -> user_uid", "stockexit: user_uuid -> user_uid"]
+    assert "user_uuid" in columns(engine, "stockentry") and "user_uid" not in columns(engine, "stockentry")
+    assert len(migrate(engine)) == 2  # la ejecución real sigue funcionando después
+
+
+def test_env_file_in_services_folder_supplies_database_url(tmp_path, monkeypatch):
+    import migrate_user_uid
+
+    (tmp_path / "services").mkdir()
+    (tmp_path / "services" / ".env").write_text("DATABASE_URL=sqlite:///from-env-file.db\n", encoding="utf-8")
+    monkeypatch.setattr(migrate_user_uid, "REPO_ROOT", tmp_path)
+    monkeypatch.delenv("DATABASE_URL")  # monkeypatch lo restaura al terminar el test
+    migrate_user_uid.load_env_file()
+    import os
+
+    assert os.environ["DATABASE_URL"] == "sqlite:///from-env-file.db"
+
+
+def test_real_environment_variable_wins_over_the_env_file(tmp_path, monkeypatch):
+    import os
+
+    import migrate_user_uid
+
+    (tmp_path / "services").mkdir()
+    (tmp_path / "services" / ".env").write_text("DATABASE_URL=sqlite:///from-env-file.db\n", encoding="utf-8")
+    monkeypatch.setattr(migrate_user_uid, "REPO_ROOT", tmp_path)
+    monkeypatch.setenv("DATABASE_URL", "sqlite://")
+    migrate_user_uid.load_env_file()
+    assert os.environ["DATABASE_URL"] == "sqlite://"
+
+
+def test_missing_database_url_explains_where_to_put_it(tmp_path, monkeypatch, capsys):
+    import migrate_user_uid
+
+    monkeypatch.setattr(migrate_user_uid, "REPO_ROOT", tmp_path)  # sin services/.env
+    monkeypatch.delenv("DATABASE_URL")
+    assert migrate_user_uid.main([]) == 1
+    assert "services/.env" in capsys.readouterr().err
+
+
+def test_unknown_option_is_rejected(capsys):
+    import migrate_user_uid
+
+    assert migrate_user_uid.main(["--yes"]) == 1
+    assert "--dry-run" in capsys.readouterr().err
