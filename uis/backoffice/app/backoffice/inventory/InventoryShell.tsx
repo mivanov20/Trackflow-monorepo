@@ -24,6 +24,10 @@ export function InventoryShell({ children }: { children: ReactNode }) {
           <Link href="/backoffice/inventory/orders/outbound">Outbound order</Link>
           <Link href="/backoffice/inventory/orders">Orders history</Link>
         </nav>
+        <nav aria-label="Incidents" className="incident-nav">
+          <Link href="/backoffice/incidents">Incidents</Link>
+          <Link href="/backoffice/incidents/new">Report incident</Link>
+        </nav>
         <div className="inventory-session">
           <span>{user?.name ?? "Signed-in operative"}</span>
           <button type="button" onClick={signOut}>Sign out</button>

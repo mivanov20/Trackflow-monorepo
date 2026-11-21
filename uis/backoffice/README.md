@@ -64,3 +64,12 @@ Open `http://localhost:8081`.
 - Filter sample rows by warehouse and shipment status.
 - Use `/` to focus search and the refresh control to update the local display timestamp.
 - Summary cards update with the active filters and count only the local sample records.
+
+## Incidents
+
+Protected routes (same login and layout as inventory) for the centralized incident manager, served by `/api/incidents` in `services/`:
+
+- `/backoffice/incidents` shows a summary panel (totals by status, category, origin and branch) and the incident list with filters by status, origin, branch and category. Status can be changed from the list (only lifecycle-valid next steps are offered; if the update fails the control reverts and a message explains why). Loading, error-with-retry and empty states are handled for the list and the summary independently.
+- `/backoffice/incidents/new` is the report form. It validates required fields in the browser, shows API errors next to their field or in a banner with a retry button, disables the submit button while saving, highlights the branch field when the origin is `branch`, and uses touch-sized controls with dropdowns instead of free text wherever possible.
+
+`lib/incidents.ts` holds the types, display labels and API calls; `lib/api-client.ts` gained `PATCH`, an optional request timeout, per-field errors and a service name for messages (inventory behaviour is unchanged). Screenshots are in `docs/incident-manager/`.

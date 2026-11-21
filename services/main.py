@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .auth import _jwt_secret, router as auth_router
 from .database import create_db_and_tables
+from .routers.incidents import router as incidents_router
 from .routers.inventory import router as inventory_router
 
 
@@ -22,11 +23,12 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3001,http://127.0.0.1:3001").split(","),
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
 app.include_router(auth_router)
 app.include_router(inventory_router)
+app.include_router(incidents_router)
 
 
 @app.get("/health", tags=["health"])

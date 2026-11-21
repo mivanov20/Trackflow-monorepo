@@ -23,7 +23,8 @@ export default function BackofficeLoginPage() {
       const session = await loginUser({ email, password });
       saveSession(session);
       const next = new URLSearchParams(window.location.search).get("next");
-      router.replace(next?.startsWith("/backoffice/inventory/") ? next : "/backoffice/inventory/products");
+      const allowed = next?.startsWith("/backoffice/inventory/") || next?.startsWith("/backoffice/incidents");
+      router.replace(next && allowed ? next : "/backoffice/inventory/products");
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "Unable to sign in. Please try again.");
     } finally {

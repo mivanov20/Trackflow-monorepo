@@ -49,3 +49,65 @@ services/.venv/bin/python -m pytest services/tests -q
 ```
 
 Tests use an in-memory SQLite database and temporary TinyDB file. For live integration, configure a development Supabase `DATABASE_URL` and the backoffice API URL; no real credentials belong in source control.
+
+## Incident manager (`/api/incidents`)
+
+Centralized registry of operational incidents for TrackFlow's two markets. It lives in the same FastAPI service, database and login as the inventory API: `models.py` (`Incident`, `IncidentSeedLedger`), `schemas.py` (`IncidentRead`) and `routers/incidents.py`. Every incident route requires the same bearer JWT as the inventory routes. The backoffice pages are `/backoffice/incidents` (list and summary) and `/backoffice/incidents/new` (report form).
+
+### Data model
+
+| Field | Rules |
+| --- | --- |
+| `id` | Generated automatically |
+| `title`, `description` | Required (title up to 120 characters) |
+| `category` | `lost_parcel`, `delivery_failure`, `inventory_discrepancy`, `carrier_issue`, `returns_issue`, `warehouse_incident`, `system_failure`, `client_complaint`, `other` |
+| `status` | `open`, `in_progress`, `resolved`, `discarded` (defaults to `open`) |
+| `origin` | `customer`, `branch`, `internal` |
+| `branch` | Required for every origin: `central`, `la_warehouse`, `la_office`, `zaragoza_warehouse`, `zaragoza_office` |
+| `created_at`, `updated_at` | Generated automatically (UTC); `updated_at` changes on every status update |
+
+Allowed values are enforced twice: by the shared validator (clear `400` errors) and by `CHECK` constraints in the database. `category`, `status`, `origin` and `branch` are indexed, so filtering SLA-sensitive categories (`lost_parcel`, `carrier_issue`) is a plain indexed query.
+
+**Lifecycle:** `open` → `in_progress` or `discarded`; `in_progress` → `resolved` or `discarded`; `resolved` and `discarded` are final.
+
+### Endpoints
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| `POST` | `/api/incidents` | `201` with the incident; `400` naming each invalid field |
+| `GET` | `/api/incidents` | Optional filters `status`, `origin`, `branch`, `category` (invalid value → `400`); empty table → `[]` |
+| `GET` | `/api/incidents/summary` | `total`, `by_status`, `by_category`, `by_origin`, `by_branch`; every key present, zeros when empty |
+| `GET` | `/api/incidents/{id}` | `404` if missing |
+| `PATCH` | `/api/incidents/{id}/status` | Body `{"status": "in_progress"}`; invalid value or lifecycle transition → `400` |
+
+### Errors
+
+Incident endpoints always answer in JSON, never with a stack trace:
+
+```json
+{"error": "validation_error", "message": "Some fields need your attention.",
+ "errors": [{"field": "branch", "message": "Branch is required."}]}
+```
+
+`404` uses `"error": "not_found"`. Any unhandled exception returns `500` with `"error": "internal_error"` and a generic message; the real error is only written to the server log. These formats are scoped to the incident router (`IncidentRoute`), so the inventory endpoints keep FastAPI's default errors.
+
+### Shared validation
+
+The enums, lifecycle rules, payload validation and the analyzer-CSV validation and transformation live in `packages/shared/trackflow_shared/incidents.py` (a Python package next to the TypeScript types). The API and `scripts/seed_incidents.py` both import it. `services/requirements.txt` installs it with `-e ./packages/shared`. Its own tests: `cd packages/shared && python -m pytest`.
+
+### Seed the historical incidents
+
+From the repository root, with `DATABASE_URL` set as for the API (for local use, `sqlite:///./services/dev.db` works):
+
+```bash
+services/.venv/bin/python scripts/seed_incidents.py path/to/incidents-trackflow.csv
+```
+
+Without an argument the script reads `data/raw/incidents-trackflow.csv`, which is git-ignored because the export contains personal data. Every row goes through the shared validation and these transformations before insert: `description` → `title` (first 120 characters, trimmed) and `description` (verbatim); `date` → `created_at` and `updated_at` (midnight UTC); `OPEN`/`CLOSED`/`DISCARDED` → `open`/`resolved`/`discarded`; `LOST_PARCEL` → `lost_parcel`, `DELAYED_DELIVERY`/`DAMAGE` → `carrier_issue`, `WRONG_ADDRESS` → `delivery_failure`, `RETURN_REQUEST` → `returns_issue`; country `US` → `la_office`, `ES` → `zaragoza_office`; `origin` is always `customer`. Other columns (names, emails) are never read.
+
+Invalid rows (missing required field, unknown status, category or country, bad date) are not inserted and are listed with their line number and reason at the end. The CSV `incident_id` is not stored on the incident; it is kept in the `incident_seed_ledger` table, so a second run inserts nothing. Expected summary after seeding the 95 valid rows: status `open` 29 / `resolved` 52 / `discarded` 14, category `lost_parcel` 14 / `carrier_issue` 45 / `delivery_failure` 19 / `returns_issue` 17.
+
+### Known gaps
+
+- The form and messages are English only (no bilingual labels yet).
+- Automatic alerts for SLA-sensitive incidents are out of scope; the data model supports filtering for them.

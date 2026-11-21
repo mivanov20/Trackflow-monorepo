@@ -26,3 +26,10 @@ Milestone 5: migrate the public site and backoffice, then implement operative au
 - Start the service with private Supabase configuration, register an operative, seed the development database, and verify all four protected views against the live API.
 - Configure a private development Supabase `DATABASE_URL`, start the API, and repeat inventory checks against Supabase; the implemented API was verified with temporary SQLite.
 - Commit and push the verified Milestone 5 changes to the fork after live Supabase validation.
+
+## Project 13: Centralized Incident Manager (branch `Centralized-Incident-Manager`, built on Milestone 5)
+
+- Integrated into the Milestone 5 platform: same FastAPI service, SQLModel database, login and Next.js backoffice. API, seed script, shared validation, tests (`services/tests`, `packages/shared/tests`) and UI are in place.
+- The real `incidents-trackflow.csv` and the analyzer project's code were not available. CSV columns (`incident_id`, `description`, `date`, `status`, `category`, `country`) come from the briefing's mappings, and tests use a synthetic 95-valid-row CSV. Seeding totals against the real file are unverified.
+- Verified locally against SQLite; not run against a live Supabase `DATABASE_URL`.
+- Screenshots for the PR are in `docs/incident-manager/`.

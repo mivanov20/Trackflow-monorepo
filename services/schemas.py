@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 Warehouse = Literal["LA", "ZGZ"]
 Category = Literal["fashion", "electronics", "cosmetics"]
@@ -59,3 +59,24 @@ class InventoryOrderRead(BaseModel):
     created_at: datetime
     user_uuid: str
     sku: SKURead
+
+class IncidentRead(BaseModel):
+    """API representation of an incident (timestamps are UTC, ISO 8601 with a Z suffix)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    description: str
+    category: str
+    status: str
+    origin: str
+    branch: str
+    created_at: datetime
+    updated_at: datetime
+
+    @field_serializer("created_at", "updated_at")
+    def _as_utc(self, value: datetime) -> str:
+        if value.tzinfo is None:  # SQLite may return naive values; they are stored as UTC
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")

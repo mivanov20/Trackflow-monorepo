@@ -125,6 +125,7 @@ export function BackofficeDashboard({ shipments, analytics }: BackofficeDashboar
           <a className="nav-item" href="#shipments"><span className="nav-glyph" aria-hidden="true">↗</span>Shipments<span className="nav-count">{shipments.length.toString().padStart(2, "0")}</span></a>
           <a className="nav-item" href="#m2-title"><span className="nav-glyph" aria-hidden="true">⌖</span>M2 analytics</a>
           <Link className="nav-item" href="/backoffice/inventory/products"><span className="nav-glyph" aria-hidden="true">▤</span>Inventory</Link>
+          <Link className="nav-item" href="/backoffice/incidents"><span className="nav-glyph" aria-hidden="true">!</span>Incidents</Link>
         </nav>
         <div className="sidebar-bottom"><div className="connection-state"><span></span>DEMO MODE</div><p>Illustrative data<br />No live systems connected</p><a href="http://localhost:3000/">Public website <span aria-hidden="true">↗</span></a></div>
       </aside>

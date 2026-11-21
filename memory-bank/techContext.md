@@ -44,3 +44,11 @@ There is no root test script or app-specific test harness currently. Validate th
 - Preserve unrelated milestone work and inspect `git status` before staging or committing.
 - Treat root `CONTEXT.md` as the authoritative company briefing. It identifies Thomas Harry as CEO and Daniel Espinoza as the creator of TrackFlow Tech.
 - Update this memory when architecture, app entry points, commands, or verified domain decisions change.
+
+## Incident manager (project 13)
+
+- API: `services/routers/incidents.py` (`/api/incidents`, bearer JWT required) with `Incident` and `IncidentSeedLedger` in `services/models.py` and `IncidentRead` in `services/schemas.py`. Structured JSON errors (400/404/generic 500) are scoped to this router through `IncidentRoute`; inventory keeps FastAPI defaults.
+- Shared rules and validation: `packages/shared/trackflow_shared/incidents.py` (Python package; installed by `services/requirements.txt` via `-e ./packages/shared`; tests: `cd packages/shared && python -m pytest`). Used by the API and `scripts/seed_incidents.py`.
+- UI: `/backoffice/incidents` (list, filters, summary) and `/backoffice/incidents/new` (form) in `uis/backoffice`, using `lib/incidents.ts`.
+- Seed: `services/.venv/bin/python scripts/seed_incidents.py <csv>` from the repo root with `DATABASE_URL` set. The real `incidents-trackflow.csv` (personal data) is git-ignored at `data/raw/incidents-trackflow.csv`.
+- Windows note: the virtualenv interpreter is `services/.venv/Scripts/python.exe`.
