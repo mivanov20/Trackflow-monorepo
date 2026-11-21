@@ -1,14 +1,16 @@
 import { apiRequest } from "./api-client";
 
 export interface AuthUser {
-  user_uuid: string;
+  id: string;
   name: string;
   email: string;
+  role: "admin" | "manager" | "user";
 }
 
 interface AuthResponse {
   access_token: string;
   token_type: "bearer";
+  expires_in: number;
   user: AuthUser;
 }
 
@@ -54,8 +56,8 @@ export function clearSession(): void {
   }
 }
 
-export async function registerUser(payload: { name: string; email: string; password: string }): Promise<AuthUser> {
-  return apiRequest<AuthUser>("/auth/register", { method: "POST", body: payload });
+export async function registerUser(payload: { name: string; email: string; password: string }): Promise<{ id: string; email: string }> {
+  return apiRequest<{ id: string; email: string }>("/users", { method: "POST", body: payload });
 }
 
 export async function loginUser(payload: { email: string; password: string }): Promise<AuthResponse> {

@@ -2,9 +2,8 @@ import sys
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, select
-from tinydb import TinyDB
 
-from services.auth import _users_path
+from services.accounts import AccountStoreError, list_users
 from services.models import SKU, StockEntry, StockExit
 
 SKU_SEED = [
@@ -26,13 +25,12 @@ def seed_development_inventory() -> None:
     from services.database import create_db_and_tables, engine
 
     try:
-        with TinyDB(_users_path()) as users_db:
-            users = users_db.all()
-    except (OSError, ValueError) as error:  # ValueError cubre un users.json corrupto
+        users = list_users()
+    except AccountStoreError as error:
         raise RuntimeError("Could not read the operative account store. Check AUTH_DB_PATH and the file permissions.") from error
     if not users:
-        raise RuntimeError("Register an operative with POST /auth/register before seeding inventory.")
-    user_uuid = users[0]["user_uuid"]
+        raise RuntimeError("Register an operative with POST /users before seeding inventory.")
+    user_uid = users[0].id
 
     create_db_and_tables()
     with Session(engine) as session:
@@ -55,7 +53,7 @@ def seed_development_inventory() -> None:
         for code, quantity, reference, warehouse in entries:
             exists = session.exec(select(StockEntry).where(StockEntry.reference == reference)).first()
             if exists is None:
-                session.add(StockEntry(sku_id=existing_by_code[code].id, quantity=quantity, reference=reference, warehouse=warehouse, user_uuid=user_uuid))
+                session.add(StockEntry(sku_id=existing_by_code[code].id, quantity=quantity, reference=reference, warehouse=warehouse, user_uid=user_uid))
 
         exits = [
             ("CLT-SNK-W-42", 4, "dispatch", "1Z999AA10123456784", "LA"),
@@ -71,7 +69,7 @@ def seed_development_inventory() -> None:
                 )
             ).first()
             if exists is None:
-                session.add(StockExit(sku_id=existing_by_code[code].id, quantity=quantity, exit_type=exit_type, tracking_number=tracking_number, warehouse=warehouse, user_uuid=user_uuid))
+                session.add(StockExit(sku_id=existing_by_code[code].id, quantity=quantity, exit_type=exit_type, tracking_number=tracking_number, warehouse=warehouse, user_uid=user_uid))
         session.commit()
 
 

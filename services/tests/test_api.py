@@ -2,6 +2,7 @@ import os
 
 os.environ["DATABASE_URL"] = "sqlite://"
 os.environ["JWT_SECRET"] = "test-only-secret-with-at-least-32-characters"
+os.environ.setdefault("BCRYPT_ROUNDS", "4")
 
 import pytest
 from fastapi.testclient import TestClient
@@ -120,7 +121,7 @@ def test_dispatch_tracking_and_order_history(client, auth_headers):
         json={"sku_id": product["id"], "quantity": 4, "reference": "GR-LA-0234", "warehouse": "LA"},
     ).json()
     assert receipt["order_type"] == "inbound"
-    assert receipt["user_uuid"]
+    assert receipt["user_uid"]
 
     missing_tracking = client.post(
         "/inventory/orders/outbound",
@@ -144,4 +145,4 @@ def test_dispatch_tracking_and_order_history(client, auth_headers):
     assert loss.json()["tracking_number"] is None
     history = client.get("/inventory/orders", headers=auth_headers).json()
     assert {order["order_type"] for order in history} == {"inbound", "outbound"}
-    assert all(order["sku"]["name"] == product["name"] and order["user_uuid"] for order in history)
+    assert all(order["sku"]["name"] == product["name"] and order["user_uid"] for order in history)

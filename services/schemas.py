@@ -57,7 +57,7 @@ class InventoryOrderRead(BaseModel):
     tracking_number: str | None = None
     warehouse: Warehouse
     created_at: datetime
-    user_uuid: str
+    user_uid: str
     sku: SKURead
 
 class IncidentRead(BaseModel):

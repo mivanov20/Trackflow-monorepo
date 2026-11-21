@@ -39,7 +39,7 @@ export interface InventoryOrder {
   tracking_number: string | null;
   warehouse: Warehouse;
   created_at: string;
-  user_uuid: string;
+  user_uid: string;
   sku: SKU;
 }
 
