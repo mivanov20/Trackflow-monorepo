@@ -35,6 +35,8 @@ export default function CandidateDetail({ initialCandidate }: CandidateDetailPro
   const [pipelineMessage, setPipelineMessage] = useState("Changes are saved automatically.");
   const [pipelineError, setPipelineError] = useState(false);
   const [savingPipeline, setSavingPipeline] = useState(false);
+  // Último cambio de pipeline fallido, para ofrecer reintentarlo con un clic.
+  const [failedChange, setFailedChange] = useState<{ field: "status" | "stage"; value: string } | null>(null);
   const [savingNote, setSavingNote] = useState(false);
   const [deletingNoteId, setDeletingNoteId] = useState<string | number | null>(null);
   const [showEditForm, setShowEditForm] = useState(false);
@@ -72,6 +74,7 @@ export default function CandidateDetail({ initialCandidate }: CandidateDetailPro
     setCandidate({ ...candidate, status });
     setSavingPipeline(true);
     setPipelineError(false);
+    setFailedChange(null);
     setPipelineMessage("Saving status...");
 
     try {
@@ -82,6 +85,7 @@ export default function CandidateDetail({ initialCandidate }: CandidateDetailPro
       setCandidate(previous);
       setPipelineError(true);
       setPipelineMessage(candidateErrorMessage(error, "Status could not be updated."));
+      setFailedChange({ field: "status", value: status });
     } finally {
       setSavingPipeline(false);
     }
@@ -92,6 +96,7 @@ export default function CandidateDetail({ initialCandidate }: CandidateDetailPro
     setCandidate({ ...candidate, stage });
     setSavingPipeline(true);
     setPipelineError(false);
+    setFailedChange(null);
     setPipelineMessage("Saving stage...");
 
     try {
@@ -102,6 +107,7 @@ export default function CandidateDetail({ initialCandidate }: CandidateDetailPro
       setCandidate(previous);
       setPipelineError(true);
       setPipelineMessage(candidateErrorMessage(error, "Stage could not be updated."));
+      setFailedChange({ field: "stage", value: stage });
     } finally {
       setSavingPipeline(false);
     }
@@ -117,24 +123,26 @@ export default function CandidateDetail({ initialCandidate }: CandidateDetailPro
     setNotesFeedback("");
 
     try {
-      await addCandidateNote(candidate.id, content);
-    } catch (error) {
-      // Solo falla el guardado: el texto se conserva para reintentar, la lista actual sigue visible.
-      setNotesError(candidateErrorMessage(error, "The note could not be added. Your text is still in the box."));
-      setSavingNote(false);
-      return;
-    }
+      try {
+        await addCandidateNote(candidate.id, content);
+      } catch (error) {
+        // Solo falla el guardado: el texto se conserva para reintentar, la lista actual sigue visible.
+        setNotesError(candidateErrorMessage(error, "The note could not be added. Your text is still in the box."));
+        return;
+      }
 
-    setNoteContent("");
-    setNotesFeedback("Note added successfully.");
-    try {
-      setNotes(await getCandidateNotes(candidate.id));
-      setNotesStatus("success");
-    } catch (error) {
-      // La nota ya se guardó; solo falló recargar la lista, así que no se pide volver a añadirla.
-      setNotesError(candidateErrorMessage(error, "The note was saved, but the list could not be refreshed."));
-      setNotesStatus("error");
+      setNoteContent("");
+      setNotesFeedback("Note added successfully.");
+      try {
+        setNotes(await getCandidateNotes(candidate.id));
+        setNotesStatus("success");
+      } catch (error) {
+        // La nota ya se guardó; solo falló recargar la lista, así que no se pide volver a añadirla.
+        setNotesError(candidateErrorMessage(error, "The note was saved, but the list could not be refreshed."));
+        setNotesStatus("error");
+      }
     } finally {
+      // Un único finally libera el estado "guardando" en todos los caminos, incluido el return anticipado.
       setSavingNote(false);
     }
   }
@@ -212,7 +220,19 @@ export default function CandidateDetail({ initialCandidate }: CandidateDetailPro
       <section className="list-panel detail-panel" aria-labelledby="pipeline-heading">
         <div className="panel-heading">
           <h2 id="pipeline-heading">Pipeline</h2>
-          <span className={pipelineError ? "feedback-error" : ""}>{pipelineMessage}</span>
+          <span className={pipelineError ? "feedback-error" : ""} role={pipelineError ? "alert" : undefined}>
+            {pipelineMessage}
+            {failedChange ? (
+              <button
+                className="panel-action"
+                type="button"
+                disabled={savingPipeline}
+                onClick={() => (failedChange.field === "status" ? updateStatus(failedChange.value) : updateStage(failedChange.value))}
+              >
+                Try again
+              </button>
+            ) : null}
+          </span>
         </div>
         <div className="filters two-column-controls">
           <label>

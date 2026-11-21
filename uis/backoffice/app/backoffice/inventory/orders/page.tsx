@@ -41,7 +41,7 @@ export default function OrdersHistoryPage() {
               <td><span className={`movement-type movement-${order.order_type}`}>{order.order_type === "inbound" ? "Stock entry" : `Stock exit · ${order.exit_type}`}</span></td>
               <td>{order.sku?.name ?? "Unknown product"}</td><td className="inventory-code">{order.sku?.sku ?? "—"}</td><td className="inventory-number">{order.quantity}</td>
               <td>{order.warehouse === "LA" ? "Los Angeles (LA)" : "Zaragoza (ZGZ)"}</td><td>{order.reference ?? order.tracking_number ?? "Loss"}</td>
-              <td>{new Date(order.created_at).toLocaleString()}</td><td className="inventory-code">{order.user_uuid}</td>
+              <td>{Number.isNaN(new Date(order.created_at).getTime()) ? "—" : new Date(order.created_at).toLocaleString()}</td><td className="inventory-code">{order.user_uuid}</td>
             </tr>)}</tbody>
           </table></div>
         )}

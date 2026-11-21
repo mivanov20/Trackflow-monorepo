@@ -234,6 +234,16 @@
         count: results[index] === null ? "—" : results[index]
       }))
     );
+    // If any count failed, say so and offer a retry instead of silently showing dashes.
+    if (results.some((value) => value === null)) {
+      el.summaryList.insertAdjacentHTML(
+        "beforeend",
+        `<li class="col-span-full rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
+          Some pipeline totals could not be loaded. Check your connection and try again.
+          <button type="button" data-retry-summary class="ml-2 rounded-lg bg-red-600 px-3 py-1 font-semibold text-white hover:bg-red-700">Try again</button>
+        </li>`
+      );
+    }
   }
 
   /* -------------------------------------------------------------- detail */
@@ -688,6 +698,9 @@
     });
 
     el.retryBtn.addEventListener("click", loadRecords);
+    el.summaryList.addEventListener("click", (event) => {
+      if (event.target.closest("[data-retry-summary]")) loadSummary();
+    });
 
     el.prevPageBtn.addEventListener("click", () => {
       if (state.page <= 1) return;

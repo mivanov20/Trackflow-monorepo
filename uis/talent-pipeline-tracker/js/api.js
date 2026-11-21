@@ -59,11 +59,22 @@
     return "The request could not be completed. Please try again.";
   }
 
+  function plainFieldMessage(item) {
+    const type = String((item && item.type) || "");
+    if (type === "missing") return "This field is required.";
+    if (type.includes("email")) return "Enter a valid email address.";
+    if (type.includes("url")) return "Enter a valid http(s) link.";
+    if (type.includes("int") || type.includes("float") || type.includes("number")) return "Enter a valid number.";
+    if (type.includes("too_short") || type.includes("too_long")) return "This value has the wrong length.";
+    return "This value is not valid.";
+  }
+
   function fieldErrorsFrom(payload) {
     if (!payload || !Array.isArray(payload.detail)) return {};
     return payload.detail.reduce((acc, item) => {
       const field = Array.isArray(item.loc) ? item.loc[item.loc.length - 1] : null;
-      if (field && !acc[field]) acc[field] = item.msg;
+      // Plain language per field: raw Pydantic text ("value is not a valid ...") is never shown.
+      if (field && !acc[field]) acc[field] = plainFieldMessage(item);
       return acc;
     }, {});
   }

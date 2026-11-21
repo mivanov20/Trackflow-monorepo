@@ -34,19 +34,20 @@ export default function CandidateList() {
     async function loadCandidates() {
       setFetchStatus("loading");
       setError("");
+      let outcome: "success" | "error" = "error";
 
       try {
         const records = await getCandidates({ status, stage, search });
-        if (!controller.signal.aborted) {
-          setCandidates(records);
-          setFetchStatus("success");
-        }
+        if (!controller.signal.aborted) setCandidates(records);
+        outcome = "success";
       } catch (loadError) {
         if (!controller.signal.aborted) {
           setCandidates([]);
           setError(candidateErrorMessage(loadError, "We couldn't load candidates."));
-          setFetchStatus("error");
         }
+      } finally {
+        // El estado de carga se cierra siempre aquí; una petición cancelada no pisa a la nueva.
+        if (!controller.signal.aborted) setFetchStatus(outcome);
       }
     }
 
