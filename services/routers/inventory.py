@@ -6,7 +6,7 @@ from sqlmodel import Session, select
 
 from ..accounts import User
 from ..auth import get_current_user
-from ..database import get_session
+from ..database import commit_session, get_session
 from ..models import SKU, StockEntry, StockExit
 from ..schemas import InventoryOrderRead, SKUCreate, SKURead, StockEntryCreate, StockExitCreate
 
@@ -76,7 +76,7 @@ def create_product(payload: SKUCreate, session: Session = Depends(get_session)) 
     """Registra un SKU y devuelve su stock calculado inicial."""
     product = SKU.model_validate(payload)
     session.add(product)
-    session.commit()
+    commit_session(session)
     session.refresh(product)
     return sku_read(session, product)
 
@@ -97,7 +97,7 @@ def create_stock_entry(
     _sku_or_404(session, payload.sku_id)
     movement = StockEntry(**payload.model_dump(), user_uid=user.id)
     session.add(movement)
-    session.commit()
+    commit_session(session)
     session.refresh(movement)
     return _order_read(session, movement, "inbound")
 
@@ -118,7 +118,7 @@ def create_stock_exit(
         )
     movement = StockExit(**payload.model_dump(), user_uid=user.id)
     session.add(movement)
-    session.commit()
+    commit_session(session)
     session.refresh(movement)
     return _order_read(session, movement, "outbound")
 

@@ -77,3 +77,60 @@ def test_missing_file_and_missing_database_url_exit_with_error(tmp_path, monkeyp
     monkeypatch.delenv("DATABASE_URL")
     assert main(["seed_incidents.py", str(csv_path)]) == 1
     assert "DATABASE_URL" in capsys.readouterr().err
+
+
+# --- critical input / database failures -----------------------------------------
+
+
+def _point_main_at(monkeypatch, engine):
+    monkeypatch.setattr("services.database.engine", engine)
+    monkeypatch.setattr("services.database.create_db_and_tables", lambda: None)
+
+
+def test_missing_required_column_exits_with_error(tmp_path, monkeypatch, capsys, incident_engine):
+    _point_main_at(monkeypatch, incident_engine)
+    csv_path = tmp_path / "in.csv"
+    csv_path.write_text("incident_id,description\n1,Lost parcel\n", encoding="utf-8")
+    assert main(["seed_incidents.py", str(csv_path)]) == 1
+    err = capsys.readouterr().err
+    assert "missing required column(s): date, status, category, country" in err
+
+
+def test_non_utf8_and_empty_files_exit_with_error(tmp_path, monkeypatch, capsys, incident_engine):
+    _point_main_at(monkeypatch, incident_engine)
+    latin1 = tmp_path / "latin1.csv"
+    latin1.write_bytes("incident_id,description\n1,Caf\xe9\n".encode("latin-1"))
+    assert main(["seed_incidents.py", str(latin1)]) == 1
+    assert "not valid UTF-8" in capsys.readouterr().err
+
+    header_only = write_csv(tmp_path / "empty.csv", [])
+    assert main(["seed_incidents.py", str(header_only)]) == 1
+    assert "no data rows" in capsys.readouterr().err
+
+
+def test_database_failure_exits_with_sanitized_error(tmp_path, monkeypatch, capsys, incident_engine):
+    from sqlalchemy.exc import OperationalError
+
+    def refuse(*_args, **_kwargs):
+        raise OperationalError("INSERT", {}, Exception("password authentication failed for user secret_user"))
+
+    _point_main_at(monkeypatch, incident_engine)
+    monkeypatch.setattr(Session, "commit", refuse)
+    csv_path = write_csv(tmp_path / "in.csv", valid_rows()[:2])
+    assert main(["seed_incidents.py", str(csv_path)]) == 1
+    err = capsys.readouterr().err
+    assert "Seed failed" in err and "OperationalError" in err
+    assert "secret_user" not in err
+
+
+def test_unreachable_database_exits_with_error(tmp_path, monkeypatch, capsys):
+    from sqlalchemy.exc import OperationalError
+
+    def unreachable():
+        raise OperationalError("CONNECT", {}, Exception("could not connect to db.internal"))
+
+    monkeypatch.setattr("services.database.create_db_and_tables", unreachable)
+    csv_path = write_csv(tmp_path / "in.csv", valid_rows()[:1])
+    assert main(["seed_incidents.py", str(csv_path)]) == 1
+    err = capsys.readouterr().err
+    assert "Could not prepare the database" in err and "db.internal" not in err

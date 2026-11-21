@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { readSavedLanguage, saveLanguage } from "../components";
 
 type FieldName =
   | "client_id"
@@ -121,7 +122,7 @@ export function ApplicationForm() {
   const [language, setLanguage] = useState<"en" | "es">("en");
 
   useEffect(() => {
-    if (window.localStorage.getItem("trackflow-lang") === "es") {
+    if (readSavedLanguage() === "es") {
       document.documentElement.lang = "es";
       setLanguage("es");
     }
@@ -154,7 +155,7 @@ export function ApplicationForm() {
 
   function toggleLanguage() {
     const nextLanguage = language === "en" ? "es" : "en";
-    window.localStorage.setItem("trackflow-lang", nextLanguage);
+    saveLanguage(nextLanguage);
     document.documentElement.lang = nextLanguage;
     setLanguage(nextLanguage);
   }
