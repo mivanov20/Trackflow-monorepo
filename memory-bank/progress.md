@@ -22,6 +22,12 @@ Milestone 5: migrate the public site and backoffice, then implement operative au
 ## Next steps
 
 - Preserve the backoffice demo-data disclaimer until real integrations exist.
+- Add backend services only after requirements and API contracts are defined.
+## Project 7: Supplier Directory (branch `Supplier-Directory`)
+
+- `services/supplier-directory/` implements the supplier API with seeder and tests; `uis/backoffice/suppliers.html` is the supplier page, linked from the backoffice menu.
+- The supplier model and the 15 seed suppliers (in `supplier_directory/seed.py`) follow the Supplier Directory section of `CONTEXT.md`. `updated_at` tracks only the last rate update; currency must match country.
+
 - Attach website/backoffice screenshots and link `AGENTS.md` in the PR description when preparing the change for review.
 - Start the service with private Supabase configuration, register an operative, seed the development database, and verify all four protected views against the live API.
 - Configure a private development Supabase `DATABASE_URL`, start the API, and repeat inventory checks against Supabase; the implemented API was verified with temporary SQLite.

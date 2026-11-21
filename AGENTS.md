@@ -1,12 +1,12 @@
 # Universal Agent Rules
 
-These rules apply to AI agents working in this repository. Follow them together with the repository-specific workflow below and any more specific instructions. Preserve user intent when instructions conflict; ask for clarification when the conflict changes the implementation. All user-facing communication is in Spanish unless the user explicitly requests another language.
+These rules apply to AI agents working in this repository. Follow them together with the repository-specific workflow below and any more specific instructions. Preserve user intent when instructions conflict; ask for clarification when the conflict changes the implementation. All user-facing communication is in English.
 
 ## 1. Communication
 
-- Respond in Spanish unless the user explicitly requests another language.
+- Respond in English.
 - Write code identifiers, filenames, and class names in English.
-- Write code comments in Spanish when comments are needed; do not add comments that conflict with more specific repository or task requirements.
+- Write code comments in English when comments are needed; do not add comments that conflict with more specific repository or task requirements.
 - Write commit messages in English using Conventional Commits.
 - Keep communication direct and technical.
 - Use English branch names, such as `feat/user-auth` or `fix/login-redirect`.
@@ -41,7 +41,7 @@ The following paths require explicit developer confirmation before modification:
 - Read all relevant files before proposing a change.
 - Propose focused tests or checks alongside each implementation.
 - Provide the verification report in Section 8 at the end of each completed task.
-- Add Spanish comments only when comments are appropriate; avoid comments that merely restate code.
+- Add English comments only when comments are appropriate; avoid comments that merely restate code.
 - Add JSDoc to public JavaScript functions and docstrings to Python functions when creating or materially changing them, consistent with local conventions.
 - Record out-of-scope technical debt in `TECH_DEBT.md` as described in Section 10.
 - Perform the security review in Section 7 for every task.
@@ -77,30 +77,30 @@ If a vulnerability is found, report it promptly and prioritize mitigation. Do no
 
 ## 8. Verification Report
 
-End each completed task with a Spanish report, except when the user explicitly requests another language:
+End each completed task with an English report:
 
 ```markdown
-## Reporte de verificación
+## Verification Report
 
-### Archivos tocados
-| Archivo | Líneas modificadas | Motivo |
+### Files Changed
+| File | Lines changed | Reason |
 |---|---|---|
-| path/to/file | line | descripción |
+| path/to/file | line | description |
 
-### Resumen
-Qué se hizo y por qué (2-4 líneas).
+### Summary
+What was done and why (2-4 lines).
 
-### Tabla de cumplimiento
-| Criterio | Estado |
+### Compliance Checklist
+| Criterion | Status |
 |---|---|
-| Scope respetado | ✅ / ❌ |
-| Tests propuestos y ejecutados | ✅ / ❌ |
-| Comentarios agregados cuando correspondía | ✅ / ❌ |
-| Deuda técnica fuera de scope | ✅ ninguna / ⚠️ ver TECH_DEBT.md |
-| Seguridad revisada | ✅ / ⚠️ descripción |
-| Sin funcionalidad rota | ✅ / ❌ |
+| Scope respected | ✅ / ❌ |
+| Tests proposed and run | ✅ / ❌ |
+| Comments added where appropriate | ✅ / ❌ |
+| Out-of-scope technical debt | ✅ none / ⚠️ see TECH_DEBT.md |
+| Security reviewed | ✅ / ⚠️ description |
+| No broken functionality | ✅ / ❌ |
 
-### Próximos pasos sugeridos
+### Suggested Next Steps
 - ...
 ```
 
