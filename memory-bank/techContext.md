@@ -52,3 +52,9 @@ There is no root test script or app-specific test harness currently. Validate th
 - UI: `/backoffice/incidents` (list, filters, summary) and `/backoffice/incidents/new` (form) in `uis/backoffice`, using `lib/incidents.ts`.
 - Seed: `services/.venv/bin/python scripts/seed_incidents.py <csv>` from the repo root with `DATABASE_URL` set. The real `incidents-trackflow.csv` (personal data) is git-ignored at `data/raw/incidents-trackflow.csv`.
 - Windows note: the virtualenv interpreter is `services/.venv/Scripts/python.exe`.
+
+## Error handling (error-handling audit)
+
+- API: `services/main.py` maps `SQLAlchemyError` to a generic 503 and any unhandled exception to a generic 500 (`{"detail": ...}`), via a middleware registered inside CORS so browsers can read it. Commits go through `services.database.commit_session` (rollback, then 409/503). TinyDB access in `services/auth.py` goes through `_users_db()` (I/O or corrupt JSON -> 503). Real errors are only logged server-side.
+- UIs: every fetch has loading / error / ready states with a retry action; `uis/backoffice/lib/api-client.ts` and `lib/candidates.ts` turn status codes, non-JSON bodies and validation internals into plain language. Each Next.js app has an `app/error.tsx` (retry + home link).
+- Scripts: `scripts/seed_incidents.py` and `services/seed_data.py` print sanitized messages to stderr and exit 1 on critical failures (database error messages are reduced to the exception type).
