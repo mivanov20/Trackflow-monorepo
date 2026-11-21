@@ -110,6 +110,18 @@ def login(payload: LoginRequest) -> TokenResponse:
     return _session_response(authenticate(payload.email, payload.password))
 
 
+@router.get("/me", response_model=UserWithProfile)
+def read_current_account(current_user: User = Depends(get_current_user)) -> dict:
+    """Devuelve el email y rol del usuario autenticado junto con los datos de su perfil.
+
+    El frontend lo usa para validar el token al entrar a una vista protegida y para la página de cuenta.
+    """
+    profile = get_profile_by_user_id(current_user.id)
+    if profile is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found.")
+    return {**current_user.model_dump(), "profile": profile.model_dump()}
+
+
 @router.post("/token", include_in_schema=False)
 async def login_for_swagger(request: Request) -> dict[str, str]:
     """Login con formulario (`username` + `password`) para el botón Authorize de Swagger.

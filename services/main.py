@@ -62,7 +62,11 @@ async def unhandled_error_middleware(request: Request, call_next):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3001,http://127.0.0.1:3001").split(","),
+    allow_origins=os.getenv(
+        "CORS_ORIGINS",
+        # 3001: backoffice; 3000: app de candidatos (el sitio público en 3000 no llama a la API)
+        "http://localhost:3001,http://127.0.0.1:3001,http://localhost:3000,http://127.0.0.1:3000",
+    ).split(","),
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
