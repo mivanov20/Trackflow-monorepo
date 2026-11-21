@@ -15,13 +15,22 @@ interface AuthResponse {
 const TOKEN_KEY = "trackflow-access-token";
 const USER_KEY = "trackflow-auth-user";
 
+/** Lee localStorage sin romper la UI cuando el navegador bloquea el almacenamiento (modo privado, políticas). */
+function readStorage(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
 export function getAccessToken(): string | null {
-  return typeof window === "undefined" ? null : window.localStorage.getItem(TOKEN_KEY);
+  return readStorage(TOKEN_KEY);
 }
 
 export function getCurrentUser(): AuthUser | null {
-  if (typeof window === "undefined") return null;
-  const value = window.localStorage.getItem(USER_KEY);
+  const value = readStorage(USER_KEY);
   if (!value) return null;
   try {
     return JSON.parse(value) as AuthUser;
@@ -37,8 +46,12 @@ export function saveSession(response: AuthResponse): void {
 }
 
 export function clearSession(): void {
-  window.localStorage.removeItem(TOKEN_KEY);
-  window.localStorage.removeItem(USER_KEY);
+  try {
+    window.localStorage.removeItem(TOKEN_KEY);
+    window.localStorage.removeItem(USER_KEY);
+  } catch {
+    // Sin acceso al almacenamiento no hay sesión que borrar.
+  }
 }
 
 export async function registerUser(payload: { name: string; email: string; password: string }): Promise<AuthUser> {

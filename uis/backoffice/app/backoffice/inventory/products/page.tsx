@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { ApiError } from "../../../../lib/api-client";
+import { useCallback, useEffect, useState } from "react";
+import { GENERIC_ERROR_MESSAGE, messageFor } from "../../../../lib/api-client";
 import { getAccessToken } from "../../../../lib/auth";
 import { inventoryApi, type SKU } from "../../../../lib/inventory";
 
@@ -18,22 +18,32 @@ export default function ProductsPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const loadProducts = useCallback(async () => {
     const token = getAccessToken();
     if (!token) return;
-    inventoryApi.listProducts(token)
-      .then(setProducts)
-      .catch((caught: unknown) => setError(caught instanceof ApiError ? caught.message : "Unable to load products."))
-      .finally(() => setLoading(false));
+    setLoading(true);
+    setError("");
+    try {
+      setProducts(await inventoryApi.listProducts(token));
+    } catch (caught) {
+      setError(`The products could not be loaded. ${messageFor(caught, GENERIC_ERROR_MESSAGE)}`);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadProducts();
+  }, [loadProducts]);
 
   return (
     <>
-      <header className="inventory-page-header"><div><p className="inventory-eyebrow">WAREHOUSE OPERATIONS / INVENTORY</p><h1>Products</h1><p>SKU stock is shown for its assigned warehouse.</p></div><button className="inventory-secondary-button" type="button" onClick={() => window.location.reload()}>Refresh</button></header>
-      {error && <p className="inventory-alert" role="alert">{error}</p>}
-      <section className="inventory-table-section" aria-labelledby="products-heading">
+      <header className="inventory-page-header"><div><p className="inventory-eyebrow">WAREHOUSE OPERATIONS / INVENTORY</p><h1>Products</h1><p>SKU stock is shown for its assigned warehouse.</p></div><button className="inventory-secondary-button" type="button" disabled={loading} onClick={() => void loadProducts()}>Refresh</button></header>
+      <section className="inventory-table-section" aria-labelledby="products-heading" aria-busy={loading}>
         <h2 id="products-heading">SKU inventory</h2>
-        {loading ? <p role="status">Loading products…</p> : products.length === 0 ? <p>No SKUs are registered yet.</p> : (
+        {loading ? <p className="incident-state" role="status"><span className="incident-spinner incident-spinner-dark" aria-hidden="true" /> Loading products…</p> : error ? (
+          <p className="incident-state incident-state-error" role="alert"><span>{error}</span><button className="inventory-secondary-button" type="button" onClick={() => void loadProducts()}>Try again</button></p>
+        ) : products.length === 0 ? <p>No SKUs are registered yet.</p> : (
           <>
             <div className="inventory-table-scroll products-desktop-table"><table className="inventory-table"><thead><tr><th>Product</th><th>SKU</th><th>Client</th><th>Category</th><th>Warehouse</th><th>Current stock</th><th>Stock level</th><th>Actions</th></tr></thead>
               <tbody>{products.map((product) => <tr key={product.id}>
