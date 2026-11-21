@@ -52,3 +52,10 @@ There is no root test script or app-specific test harness currently. Validate th
 - UI: `/backoffice/incidents` (list, filters, summary) and `/backoffice/incidents/new` (form) in `uis/backoffice`, using `lib/incidents.ts`.
 - Seed: `services/.venv/bin/python scripts/seed_incidents.py <csv>` from the repo root with `DATABASE_URL` set. The real `incidents-trackflow.csv` (personal data) is git-ignored at `data/raw/incidents-trackflow.csv`.
 - Windows note: the virtualenv interpreter is `services/.venv/Scripts/python.exe`.
+
+## Authentication (AUTH-01)
+
+- Stateless JWT only (no sessions or cookies). `services/security.py`: bcrypt hashing (`libpass`, imported as `passlib.hash.bcrypt`; max 72 bytes) and `python-jose` signing. Config from env: `JWT_SECRET` (>= 32 chars, required), `JWT_ALGORITHM` (HS256/384/512, default HS256), `ACCESS_TOKEN_EXPIRE_MINUTES` (default 480), `BCRYPT_ROUNDS` (default 12; tests use 4).
+- `User` (id, email, hashed_password, is_active, role admin|manager|user, created_at) and `Profile` (id, user_id, name, phone, address) live only in TinyDB (`AUTH_DB_PATH`, tables `users` and `profiles`) through the service layer in `services/accounts.py`. `User.id` is a uuid string; it is the JWT `sub` and what inventory stores as `user_uid`. Legacy accounts (old default-table format with `user_uuid`) are migrated on first read and re-hashed to bcrypt on first login.
+- Routes: `/auth` (`POST /login` JSON, `POST /token` form for Swagger, deprecated `POST /register` alias), `/users` (`POST` public; list admin-only; get/put/delete self-or-admin, 403 otherwise; only admins change `role`/`is_active`; the last active admin cannot be removed), `/profiles/me` (GET/PUT). `get_current_user` in `services/auth.py` protects `/users`, `/profiles`, `/inventory/*` and `/api/incidents/*`; only `/health`, `/auth/*` and `POST /users` are public.
+- Inventory columns were renamed `user_uuid` -> `user_uid`. Existing databases need `python scripts/migrate_user_uid.py` once (the API refuses to start otherwise). The first admin is created with `python scripts/promote_user.py <email> admin`.
