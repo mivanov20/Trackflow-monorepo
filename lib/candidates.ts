@@ -21,25 +21,60 @@ interface RequestOptions {
   body?: unknown;
 }
 
+const GENERIC_ERROR_MESSAGE = "Something went wrong while talking to the candidate service. Please try again in a moment.";
+
+/** Mensajes legibles por código HTTP: el código nunca se muestra al usuario. */
+function messageForStatus(status: number): string {
+  if (status === 400 || status === 422) return "Some of the information is not valid. Review the form and try again.";
+  if (status === 404) return "This candidate record could not be found. It may have been removed.";
+  if (status === 409) return "This record was changed by someone else. Refresh the page and try again.";
+  if (status === 429) return "Too many requests. Wait a moment and try again.";
+  return GENERIC_ERROR_MESSAGE;
+}
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers: HeadersInit = { Accept: "application/json" };
   if (options.body) headers["Content-Type"] = "application/json";
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: options.method || "GET",
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-    ...(options.method || options.body ? {} : { next: { revalidate: 60 } }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      method: options.method || "GET",
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      ...(options.method || options.body ? {} : { next: { revalidate: 60 } }),
+    });
+  } catch {
+    // Fallo de red/DNS/CORS: fetch rechaza con un TypeError técnico ("Failed to fetch").
+    throw new CandidateApiError("We couldn't reach the candidate service. Check your connection and try again.", 0);
+  }
 
   if (!response.ok) {
-    throw new CandidateApiError(`Candidate API returned ${response.status}`, response.status);
+    throw new CandidateApiError(messageForStatus(response.status), response.status);
   }
 
   if (response.status === 204) return undefined as T;
 
-  const text = await response.text();
-  return (text ? JSON.parse(text) : undefined) as T;
+  let text: string;
+  try {
+    text = await response.text();
+  } catch {
+    throw new CandidateApiError(GENERIC_ERROR_MESSAGE, response.status);
+  }
+  if (!text) return undefined as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new CandidateApiError("The candidate service sent an unexpected response. Please try again.", response.status);
+  }
+}
+
+/**
+ * Mensaje seguro para la UI: `action` dice qué falló y la segunda frase qué hacer.
+ * Los errores de la API ya son legibles; cualquier otro error (bug, TypeError) se resume genéricamente.
+ */
+export function candidateErrorMessage(error: unknown, action: string): string {
+  return `${action} ${error instanceof CandidateApiError ? error.message : "Please try again."}`;
 }
 
 function buildQuery(filters?: CandidateFilters): string {

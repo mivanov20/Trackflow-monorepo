@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import {
   addCandidateNote,
+  candidateErrorMessage,
   candidateName,
   candidateNoteContent,
   candidatePosition,
@@ -30,6 +31,7 @@ export default function CandidateDetail({ initialCandidate }: CandidateDetailPro
   const [notesStatus, setNotesStatus] = useState<"loading" | "success" | "error">("loading");
   const [notesError, setNotesError] = useState("");
   const [notesFeedback, setNotesFeedback] = useState("");
+  const [notesAttempt, setNotesAttempt] = useState(0);
   const [pipelineMessage, setPipelineMessage] = useState("Changes are saved automatically.");
   const [pipelineError, setPipelineError] = useState(false);
   const [savingPipeline, setSavingPipeline] = useState(false);
@@ -53,7 +55,7 @@ export default function CandidateDetail({ initialCandidate }: CandidateDetailPro
         }
       } catch (error) {
         if (active) {
-          setNotesError(error instanceof Error ? error.message : "We couldn't load notes.");
+          setNotesError(candidateErrorMessage(error, "We couldn't load notes."));
           setNotesStatus("error");
         }
       }
@@ -63,7 +65,7 @@ export default function CandidateDetail({ initialCandidate }: CandidateDetailPro
     return () => {
       active = false;
     };
-  }, [candidate.id]);
+  }, [candidate.id, notesAttempt]);
 
   async function updateStatus(status: string) {
     const previous = candidate;
@@ -79,7 +81,7 @@ export default function CandidateDetail({ initialCandidate }: CandidateDetailPro
     } catch (error) {
       setCandidate(previous);
       setPipelineError(true);
-      setPipelineMessage(error instanceof Error ? error.message : "Status could not be updated.");
+      setPipelineMessage(candidateErrorMessage(error, "Status could not be updated."));
     } finally {
       setSavingPipeline(false);
     }
@@ -99,7 +101,7 @@ export default function CandidateDetail({ initialCandidate }: CandidateDetailPro
     } catch (error) {
       setCandidate(previous);
       setPipelineError(true);
-      setPipelineMessage(error instanceof Error ? error.message : "Stage could not be updated.");
+      setPipelineMessage(candidateErrorMessage(error, "Stage could not be updated."));
     } finally {
       setSavingPipeline(false);
     }
@@ -116,12 +118,21 @@ export default function CandidateDetail({ initialCandidate }: CandidateDetailPro
 
     try {
       await addCandidateNote(candidate.id, content);
-      setNoteContent("");
+    } catch (error) {
+      // Solo falla el guardado: el texto se conserva para reintentar, la lista actual sigue visible.
+      setNotesError(candidateErrorMessage(error, "The note could not be added. Your text is still in the box."));
+      setSavingNote(false);
+      return;
+    }
+
+    setNoteContent("");
+    setNotesFeedback("Note added successfully.");
+    try {
       setNotes(await getCandidateNotes(candidate.id));
       setNotesStatus("success");
-      setNotesFeedback("Note added successfully.");
     } catch (error) {
-      setNotesError(error instanceof Error ? error.message : "The note could not be added.");
+      // La nota ya se guardó; solo falló recargar la lista, así que no se pide volver a añadirla.
+      setNotesError(candidateErrorMessage(error, "The note was saved, but the list could not be refreshed."));
       setNotesStatus("error");
     } finally {
       setSavingNote(false);
@@ -139,8 +150,8 @@ export default function CandidateDetail({ initialCandidate }: CandidateDetailPro
       setNotesStatus("success");
       setNotesFeedback("Note deleted successfully.");
     } catch (error) {
-      setNotesError(error instanceof Error ? error.message : "The note could not be deleted.");
-      setNotesStatus("error");
+      // La lista sigue siendo válida: se muestra el error sin ocultar las notas.
+      setNotesError(candidateErrorMessage(error, "The note could not be deleted."));
     } finally {
       setDeletingNoteId(null);
     }
@@ -155,7 +166,7 @@ export default function CandidateDetail({ initialCandidate }: CandidateDetailPro
       setShowEditForm(false);
       setFormFeedback({ type: "success", message: "Candidate updated successfully." });
     } catch (error) {
-      setFormFeedback({ type: "error", message: error instanceof Error ? error.message : "Candidate could not be updated." });
+      setFormFeedback({ type: "error", message: candidateErrorMessage(error, "Candidate could not be updated.") });
     }
   }
 
@@ -249,7 +260,16 @@ export default function CandidateDetail({ initialCandidate }: CandidateDetailPro
         </form>
 
         {notesFeedback ? <p className="success-state padded-feedback">{notesFeedback}</p> : null}
-        {notesFailed ? <p className="error-state">{notesError}</p> : null}
+        {notesError ? (
+          <div className="error-state" role="alert">
+            <p>{notesError}</p>
+            {notesFailed ? (
+              <button type="button" onClick={() => setNotesAttempt((current) => current + 1)}>
+                Reload notes
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         {notesLoading ? <p className="empty-state">Loading notes...</p> : null}
 
         {notesSuccess && notes.length ? (
