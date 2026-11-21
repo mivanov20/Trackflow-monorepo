@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { BackofficeAnalytics } from "../lib/analytics";
+import { clearSession } from "../lib/auth";
 import type { SampleShipment } from "../lib/demo-data";
 
 type DisplayShipment = Omit<SampleShipment, "createdAt"> & { createdAt: string };
@@ -84,6 +86,7 @@ function M2Results({ analytics }: { analytics: BackofficeAnalytics }) {
 }
 
 export function BackofficeDashboard({ shipments, analytics }: BackofficeDashboardProps) {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [warehouse, setWarehouse] = useState("all");
   const [status, setStatus] = useState("all");
@@ -126,8 +129,9 @@ export function BackofficeDashboard({ shipments, analytics }: BackofficeDashboar
           <a className="nav-item" href="#m2-title"><span className="nav-glyph" aria-hidden="true">⌖</span>M2 analytics</a>
           <Link className="nav-item" href="/backoffice/inventory/products"><span className="nav-glyph" aria-hidden="true">▤</span>Inventory</Link>
           <Link className="nav-item" href="/backoffice/incidents"><span className="nav-glyph" aria-hidden="true">!</span>Incidents</Link>
+          <Link className="nav-item" href="/account/profile"><span className="nav-glyph" aria-hidden="true">☺</span>My account</Link>
         </nav>
-        <div className="sidebar-bottom"><div className="connection-state"><span></span>DEMO MODE</div><p>Illustrative data<br />No live systems connected</p><a href="http://localhost:3000/">Public website <span aria-hidden="true">↗</span></a></div>
+        <div className="sidebar-bottom"><button className="nav-item nav-signout" type="button" onClick={() => { clearSession(); router.replace("/login"); }}><span className="nav-glyph" aria-hidden="true">⎋</span>Sign out</button><div className="connection-state"><span></span>DEMO MODE</div><p>Illustrative data<br />No live systems connected</p><a href="http://localhost:3000/">Public website <span aria-hidden="true">↗</span></a></div>
       </aside>
 
       <main id="main" className="main-area">

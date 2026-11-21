@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import CandidateList from "../components/CandidateList";
+import CandidateList from "../../components/CandidateList";
 
 export default function CandidateListPage() {
   return (

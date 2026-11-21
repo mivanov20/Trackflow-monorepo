@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import CandidateDetail from "../../../components/CandidateDetail";
+import CandidateDetail from "../../../../components/CandidateDetail";
 import {
   CandidateApiError,
   getCandidate,
-} from "../../../lib/candidates";
+} from "../../../../lib/candidates";
 
 interface CandidateDetailPageProps {
   params: Promise<{ id: string }>;

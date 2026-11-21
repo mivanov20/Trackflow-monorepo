@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { InventoryGuard } from "../inventory/InventoryGuard";
+import { AuthGuard } from "../../components/AuthGuard";
 import { InventoryShell } from "../inventory/InventoryShell";
 
 export default function IncidentsLayout({ children }: { children: ReactNode }) {
-  return <InventoryGuard><InventoryShell>{children}</InventoryShell></InventoryGuard>;
+  return <AuthGuard><InventoryShell>{children}</InventoryShell></AuthGuard>;
 }

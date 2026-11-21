@@ -192,6 +192,7 @@ def test_security_settings_are_validated(monkeypatch):
 # --- rutas protegidas (401) -----------------------------------------------------
 
 PROTECTED = [
+    ("GET", "/auth/me"),
     ("GET", "/users"),
     ("GET", "/users/someone"),
     ("PUT", "/users/someone"),
@@ -405,3 +406,32 @@ def test_unreadable_account_store_returns_a_clean_503(api):
     response = api.post("/auth/login", json={"email": "alice@example.com", "password": PASSWORD})
     assert response.status_code == 503
     assert response.json() == {"detail": "The account service is temporarily unavailable. Please try again in a moment."}
+
+
+# --- GET /auth/me (usado por el frontend) -------------------------------------------
+
+
+def test_auth_me_returns_email_from_user_and_data_from_profile(api):
+    created = register(api, "alice@example.com", name="Alice Ng", phone="+1 555 0100", address="1 Main St")
+    me = api.get("/auth/me", headers=auth(api, "alice@example.com"))
+    assert me.status_code == 200
+    body = me.json()
+    assert body["id"] == created["id"] and body["email"] == "alice@example.com" and body["role"] == "user"
+    assert body["profile"]["name"] == "Alice Ng" and body["profile"]["phone"] == "+1 555 0100"
+    assert "hashed_password" not in me.text
+
+
+def test_auth_me_reflects_profile_updates(api):
+    register(api, "alice@example.com", name="Alice")
+    headers = auth(api, "alice@example.com")
+    api.put("/profiles/me", json={"name": "Alice Ng", "address": "Calle 1"}, headers=headers)
+    assert api.get("/auth/me", headers=headers).json()["profile"]["address"] == "Calle 1"
+
+
+def test_cors_allows_both_frontend_origins_and_the_methods_they_use(api):
+    for origin in ("http://localhost:3001", "http://localhost:3000"):
+        preflight = api.options(
+            "/profiles/me",
+            headers={"Origin": origin, "Access-Control-Request-Method": "PUT", "Access-Control-Request-Headers": "authorization,content-type"},
+        )
+        assert preflight.status_code == 200 and preflight.headers["access-control-allow-origin"] == origin

@@ -1,3 +1,4 @@
+import { AuthGuard } from "./components/AuthGuard";
 import { BackofficeDashboard } from "./dashboard";
 import { buildBackofficeAnalytics } from "../lib/analytics";
 import { demoShipments } from "../lib/demo-data";
@@ -8,5 +9,9 @@ export default function BackofficePage() {
     createdAt: createdAt.toISOString(),
   }));
 
-  return <BackofficeDashboard shipments={shipments} analytics={buildBackofficeAnalytics()} />;
+  return (
+    <AuthGuard>
+      <BackofficeDashboard shipments={shipments} analytics={buildBackofficeAnalytics()} />
+    </AuthGuard>
+  );
 }

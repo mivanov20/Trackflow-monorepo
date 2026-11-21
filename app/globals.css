@@ -1208,3 +1208,93 @@ dd {
     flex-direction: column;
   }
 }
+/* Auth: barra de cuenta de las vistas protegidas y avisos de las páginas de acceso */
+.account-bar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 12px clamp(16px, 4vw, 40px);
+  border-bottom: 1px solid #e3e8e4;
+  background: #fff;
+  font-size: 14px;
+}
+
+.account-bar a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.account-bar a:hover {
+  text-decoration: underline;
+}
+
+.account-bar-spacer {
+  flex: 1;
+}
+
+.account-bar-user {
+  color: #5d6b63;
+}
+
+.account-bar button {
+  padding: 6px 12px;
+  border: 1px solid #cdd6cf;
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.auth-notice {
+  margin: 0 0 16px;
+}
+
+.auth-links {
+  margin: 18px 0 0;
+  font-size: 14px;
+}
+
+.profile-summary {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 20px;
+  padding: 14px 16px;
+  border: 1px solid #e3e8e4;
+  border-radius: 8px;
+  background: #fafbf9;
+}
+
+.profile-summary dt {
+  color: #7a877f;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.profile-summary dd {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+  text-transform: none;
+}
+
+.auth-panel {
+  max-width: 560px;
+  padding: 22px 24px;
+}
+
+.candidate-form.auth-form {
+  grid-template-columns: 1fr;
+  max-width: 480px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

@@ -2,16 +2,25 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { ReactNode } from "react";
-import { clearSession, getCurrentUser } from "../../../lib/auth";
+import { useEffect, useState, type ReactNode } from "react";
+import { clearSession, getCurrentUser, type AuthUser } from "../../../lib/auth";
+import { SESSION_UPDATED_EVENT } from "../../../lib/session";
 
 export function InventoryShell({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const user = getCurrentUser();
+  const [user, setUser] = useState<AuthUser | null>(null);
+
+  // El nombre mostrado se actualiza cuando el perfil cambia (evento de sesión) sin recargar la página.
+  useEffect(() => {
+    const refresh = () => setUser(getCurrentUser());
+    refresh();
+    window.addEventListener(SESSION_UPDATED_EVENT, refresh);
+    return () => window.removeEventListener(SESSION_UPDATED_EVENT, refresh);
+  }, []);
 
   function signOut() {
     clearSession();
-    router.replace("/backoffice/login");
+    router.replace("/login");
   }
 
   return (
@@ -27,6 +36,9 @@ export function InventoryShell({ children }: { children: ReactNode }) {
         <nav aria-label="Incidents" className="incident-nav">
           <Link href="/backoffice/incidents">Incidents</Link>
           <Link href="/backoffice/incidents/new">Report incident</Link>
+        </nav>
+        <nav aria-label="Account" className="incident-nav">
+          <Link href="/account/profile">My account</Link>
         </nav>
         <div className="inventory-session">
           <span>{user?.name ?? "Signed-in operative"}</span>
