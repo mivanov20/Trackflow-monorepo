@@ -8,6 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, select
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from trackflow_shared.incidents import (
@@ -23,7 +24,7 @@ from trackflow_shared.incidents import (
 )
 
 from ..auth import get_current_user
-from ..database import get_session
+from ..database import SERVICE_UNAVAILABLE_MESSAGE, commit_session, get_session
 from ..models import Incident, utc_now
 from ..schemas import IncidentRead
 
@@ -74,8 +75,12 @@ class IncidentRoute(APIRoute):
                         errors.append(FieldError(field, "This value is not valid."))
                 return validation_failed(errors)
             except StarletteHTTPException as exc:
-                code = "not_found" if exc.status_code == 404 else "http_error"
+                code = {404: "not_found", 409: "conflict", 503: "service_unavailable"}.get(exc.status_code, "http_error")
                 return error_response(exc.status_code, code, str(exc.detail), headers=exc.headers)
+            except SQLAlchemyError:
+                # Fallo de lectura en la base: 503 genérico, el detalle queda solo en el log.
+                logger.exception("Database error on %s %s", request.method, request.url.path)
+                return error_response(503, "service_unavailable", SERVICE_UNAVAILABLE_MESSAGE)
             except Exception:
                 # Log the real error server-side; never send a stack trace to the client.
                 logger.exception("Unhandled error on %s %s", request.method, request.url.path)
@@ -104,7 +109,7 @@ def create_incident(payload: Any = Body(default=None), session: Session = Depend
         return validation_failed(errors)
     incident = Incident(**clean)
     session.add(incident)
-    session.commit()
+    commit_session(session)
     session.refresh(incident)
     return incident
 
@@ -168,6 +173,6 @@ def update_status(incident_id: int, payload: Any = Body(default=None), session: 
     incident.status = new_status
     incident.updated_at = utc_now()
     session.add(incident)
-    session.commit()
+    commit_session(session)
     session.refresh(incident)
     return incident
