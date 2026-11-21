@@ -3,7 +3,7 @@
  * Es independiente de `lib/candidates.ts`: la API externa de candidatos NO recibe nunca el token.
  */
 
-import { clearSession, redirectToLogin, saveSession, getAccessToken, type SessionUser } from "./session";
+import { clearSession, redirectToLogin, replaceToken, saveSession, getAccessToken, type SessionUser } from "./session";
 
 export { clearSession, getAccessToken, getCurrentUser, saveSession, saveUser } from "./session";
 export type { SessionUser as AuthUser } from "./session";
@@ -160,6 +160,34 @@ export function fetchAccount(token: string | null = getAccessToken()): Promise<A
 /** `PUT /profiles/me` con el token en la cabecera. */
 export function updateMyProfile(payload: Partial<ProfileInput>, token: string | null = getAccessToken()): Promise<Profile> {
   return apiRequest("/profiles/me", { method: "PUT", token, body: payload });
+}
+
+export interface MessageResponse {
+  message: string;
+}
+
+/** `POST /auth/forgot-password`: la API responde 200 con el mismo mensaje exista o no el email. */
+export async function requestPasswordReset(email: string): Promise<MessageResponse> {
+  return apiRequest<MessageResponse>("/auth/forgot-password", { method: "POST", body: { email } });
+}
+
+/** `POST /auth/reset-password`: 400 si el enlace es inválido, caducó o ya se usó. */
+export async function resetPassword(token: string, newPassword: string): Promise<MessageResponse> {
+  return apiRequest<MessageResponse>("/auth/reset-password", { method: "POST", body: { token, new_password: newPassword } });
+}
+
+/**
+ * `POST /auth/change-password` con el token en la cabecera. Las sesiones anteriores caducan, así que
+ * la respuesta trae un token nuevo que sustituye al guardado para que esta sesión continúe.
+ */
+export async function changePassword(currentPassword: string, newPassword: string): Promise<MessageResponse> {
+  const response = await apiRequest<MessageResponse & { access_token: string }>("/auth/change-password", {
+    method: "POST",
+    token: getAccessToken(),
+    body: { current_password: currentPassword, new_password: newPassword },
+  });
+  replaceToken(response.access_token);
+  return { message: response.message };
 }
 
 /** Usuario que muestra la interfaz a partir de la cuenta validada. */

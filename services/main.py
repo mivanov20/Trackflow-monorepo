@@ -14,6 +14,7 @@ from .routers.incidents import router as incidents_router
 from .routers.inventory import router as inventory_router
 from .routers.profiles import router as profiles_router
 from .routers.users import router as users_router
+from .mailer import validate_email_config
 from .security import validate_security_config
 
 logger = logging.getLogger("services")
@@ -25,6 +26,7 @@ GENERIC_ERROR_MESSAGE = "Something went wrong on our side. Please try again in a
 async def lifespan(_: FastAPI):
     """Valida la configuración de seguridad y prepara la base de datos al iniciar el servicio."""
     validate_security_config()
+    validate_email_config()
     create_db_and_tables()
     ensure_user_uid_columns()
     yield

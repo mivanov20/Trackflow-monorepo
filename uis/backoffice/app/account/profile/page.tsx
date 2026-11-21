@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ApiError } from "../../../lib/api-client";
 import { authErrorMessage, fetchAccount, saveUser, toSessionUser, updateMyProfile, type Account } from "../../../lib/auth";
@@ -109,6 +110,7 @@ export default function ProfilePage() {
           <h1>My account</h1>
           <p>Your sign-in email comes from your account. Name and contact details come from your profile.</p>
         </div>
+        <Link className="inventory-secondary-button incident-link-button" href="/account/change-password">Change password</Link>
       </header>
 
       {state === "loading" && <p className="incident-state" role="status"><span className="incident-spinner incident-spinner-dark" aria-hidden="true" /> Loading your account…</p>}

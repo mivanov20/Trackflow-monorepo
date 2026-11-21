@@ -10,7 +10,7 @@ export const DEFAULT_AUTHENTICATED_PATH = "/";
 /** Evento que avisa a la interfaz de que los datos del usuario guardados cambiaron. */
 export const SESSION_UPDATED_EVENT = "trackflow-session-updated";
 
-const AUTH_PAGES = ["/login", "/register"];
+const AUTH_PAGES = ["/login", "/register", "/forgot-password", "/reset-password"];
 
 export interface SessionUser {
   id: string;
@@ -66,6 +66,13 @@ export function saveSession(response: { access_token: string; user: SessionUser 
 export function saveUser(user: SessionUser): void {
   writeStorage(USER_KEY, JSON.stringify(user));
   window.dispatchEvent(new Event(SESSION_UPDATED_EVENT));
+}
+
+/** Sustituye solo el token (tras cambiar la contraseña la API devuelve uno nuevo). Devuelve false si no se pudo guardar. */
+export function replaceToken(token: string): boolean {
+  const stored = writeStorage(TOKEN_KEY, token);
+  if (stored) window.dispatchEvent(new Event(SESSION_UPDATED_EVENT));
+  return stored;
 }
 
 /** Elimina el token y el usuario guardados. */

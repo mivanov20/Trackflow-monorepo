@@ -3,6 +3,8 @@
 import hashlib
 import hmac
 import os
+import secrets
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 
@@ -15,6 +17,9 @@ DEFAULT_EXPIRE_MINUTES = 480
 DEFAULT_BCRYPT_ROUNDS = 12
 MAX_PASSWORD_BYTES = 72  # límite real de bcrypt
 LEGACY_PBKDF2_ITERATIONS = 310_000
+RESET_PURPOSE = "password_reset"
+DEFAULT_RESET_EXPIRE_MINUTES = 30
+DEFAULT_RESET_COOLDOWN_SECONDS = 60
 
 
 class InvalidTokenError(Exception):
@@ -49,11 +54,37 @@ def token_lifetime() -> timedelta:
     return timedelta(minutes=minutes)
 
 
+def reset_token_lifetime() -> timedelta:
+    """Validez del enlace de recuperación según PASSWORD_RESET_EXPIRE_MINUTES (recomendado: 15 a 60)."""
+    raw = os.getenv("PASSWORD_RESET_EXPIRE_MINUTES", str(DEFAULT_RESET_EXPIRE_MINUTES))
+    try:
+        minutes = int(raw)
+    except ValueError as error:
+        raise RuntimeError("PASSWORD_RESET_EXPIRE_MINUTES must be a whole number of minutes.") from error
+    if not 1 <= minutes <= 1440:
+        raise RuntimeError("PASSWORD_RESET_EXPIRE_MINUTES must be between 1 and 1440.")
+    return timedelta(minutes=minutes)
+
+
+def reset_cooldown_seconds() -> int:
+    """Segundos mínimos entre dos correos de recuperación para la misma cuenta (0 desactiva el límite)."""
+    raw = os.getenv("PASSWORD_RESET_COOLDOWN_SECONDS", str(DEFAULT_RESET_COOLDOWN_SECONDS))
+    try:
+        seconds = int(raw)
+    except ValueError as error:
+        raise RuntimeError("PASSWORD_RESET_COOLDOWN_SECONDS must be a whole number of seconds.") from error
+    if seconds < 0:
+        raise RuntimeError("PASSWORD_RESET_COOLDOWN_SECONDS cannot be negative.")
+    return seconds
+
+
 def validate_security_config() -> None:
     """Falla al arrancar si falta o es inválida la configuración de seguridad."""
     jwt_secret()
     jwt_algorithm()
     token_lifetime()
+    reset_token_lifetime()
+    reset_cooldown_seconds()
 
 
 def _bcrypt_rounds() -> int:
@@ -118,8 +149,19 @@ def create_access_token(user_id: str) -> str:
     return jwt.encode(claims, jwt_secret(), algorithm=jwt_algorithm())
 
 
-def decode_access_token(token: str) -> str:
-    """Valida firma y caducidad y devuelve el id de usuario; lanza InvalidTokenError si falla."""
+@dataclass(frozen=True)
+class TokenClaims:
+    """Lo que el servidor necesita de un token de sesión válido."""
+
+    user_id: str
+    issued_at: int | None
+
+
+def decode_access_token(token: str) -> TokenClaims:
+    """Valida firma y caducidad de un token de SESIÓN; lanza InvalidTokenError si falla.
+
+    Un token con claim `purpose` (por ejemplo el de recuperación de contraseña) nunca vale como sesión.
+    """
     try:
         claims = jwt.decode(
             token,
@@ -130,6 +172,50 @@ def decode_access_token(token: str) -> str:
     except JWTError as error:
         raise InvalidTokenError("Token is invalid or expired.") from error
     user_id = claims.get("sub")
-    if not isinstance(user_id, str) or not user_id:
+    if not isinstance(user_id, str) or not user_id or "purpose" in claims:
         raise InvalidTokenError("Token subject is missing.")
-    return user_id
+    issued_at = claims.get("iat")
+    return TokenClaims(user_id=user_id, issued_at=issued_at if isinstance(issued_at, int) else None)
+
+
+@dataclass(frozen=True)
+class ResetToken:
+    """Token de recuperación recién emitido y los datos que se guardan en el servidor."""
+
+    token: str
+    jti: str
+    expires_at: datetime
+
+
+def hash_jti(jti: str) -> str:
+    """El servidor guarda solo el hash del identificador del token, no el identificador."""
+    return hashlib.sha256(jti.encode("utf-8")).hexdigest()
+
+
+def create_reset_token(user_id: str) -> ResetToken:
+    """Firma un JWT de un solo propósito (`password_reset`) con caducidad corta e identificador único."""
+    now = datetime.now(timezone.utc)
+    expires_at = now + reset_token_lifetime()
+    jti = secrets.token_urlsafe(16)
+    claims = {"sub": user_id, "purpose": RESET_PURPOSE, "jti": jti, "iat": now, "exp": expires_at}
+    return ResetToken(jwt.encode(claims, jwt_secret(), algorithm=jwt_algorithm()), jti, expires_at)
+
+
+def decode_reset_token(token: str) -> tuple[str, str]:
+    """Valida firma, caducidad y propósito; devuelve `(user_id, jti)` o lanza InvalidTokenError.
+
+    Que no se haya usado antes se comprueba aparte, contra el registro del servidor.
+    """
+    try:
+        claims = jwt.decode(
+            token,
+            jwt_secret(),
+            algorithms=[jwt_algorithm()],
+            options={"require_exp": True, "require_sub": True},
+        )
+    except JWTError as error:
+        raise InvalidTokenError("Reset token is invalid or expired.") from error
+    user_id, jti = claims.get("sub"), claims.get("jti")
+    if claims.get("purpose") != RESET_PURPOSE or not isinstance(user_id, str) or not isinstance(jti, str):
+        raise InvalidTokenError("Not a password reset token.")
+    return user_id, jti

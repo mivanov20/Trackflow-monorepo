@@ -1298,3 +1298,8 @@ dd {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+
+.auth-forgot {
+  margin: -4px 0 0;
+  font-size: 13px;
+}

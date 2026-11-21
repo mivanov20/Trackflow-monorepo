@@ -106,3 +106,34 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
     user: SessionUser
+
+
+class ForgotPasswordRequest(_Strict):
+    email: EmailStr
+
+
+class ResetPasswordRequest(_Strict):
+    token: str = Field(min_length=20, max_length=4000)
+    new_password: str = Field(min_length=8, max_length=128)
+
+    _password_fits = field_validator("new_password")(_check_password)
+
+
+class ChangePasswordRequest(_Strict):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+    _password_fits = field_validator("new_password")(_check_password)
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
+class ChangePasswordResponse(BaseModel):
+    """Tras cambiar la contraseña las sesiones anteriores caducan; se devuelve un token nuevo para esta."""
+
+    message: str
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int

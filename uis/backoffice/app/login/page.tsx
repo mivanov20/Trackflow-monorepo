@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [expired, setExpired] = useState(false);
+  const [resetDone, setResetDone] = useState(false);
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -19,7 +20,9 @@ export default function LoginPage() {
   // La query se lee tras montar (no durante el render) para no desajustar la hidratación.
   useEffect(() => {
     setSearch(window.location.search);
-    setExpired(new URLSearchParams(window.location.search).get("reason") === "expired");
+    const params = new URLSearchParams(window.location.search);
+    setExpired(params.get("reason") === "expired");
+    setResetDone(params.get("reset") === "success");
   }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -45,7 +48,8 @@ export default function LoginPage() {
         <p className="inventory-eyebrow">TRACKFLOW · OPERATIONS</p>
         <h1 id="login-title">Sign in</h1>
         <p className="login-subtitle">Use your TrackFlow account to reach warehouse inventory and incident records.</p>
-        {expired && !error && <p className="inventory-warning auth-notice" role="status">Your session has expired. Please sign in again.</p>}
+        {resetDone && !error && <p className="inventory-success auth-notice" role="status">Your password was updated. Sign in with your new password.</p>}
+        {expired && !resetDone && !error && <p className="inventory-warning auth-notice" role="status">Your session has expired. Please sign in again.</p>}
         <form className="incident-form" onSubmit={submit} aria-busy={busy}>
           <div className="incident-field">
             <label htmlFor="login-email">Email</label>
@@ -54,6 +58,7 @@ export default function LoginPage() {
           <div className="incident-field">
             <label htmlFor="login-password">Password</label>
             <input id="login-password" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} />
+            <p className="auth-links auth-forgot"><Link href="/forgot-password">Forgot your password?</Link></p>
           </div>
           {error && <p className="inventory-alert" role="alert">{error}</p>}
           <button className="inventory-primary-button" type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
