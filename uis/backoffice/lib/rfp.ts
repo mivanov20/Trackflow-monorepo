@@ -201,6 +201,8 @@ export const SERVICE_LABELS: Record<string, string> = {
 
 export const COUNTRY_LABELS: Record<string, string> = { US: "United States", ES: "Spain" };
 
+export const DEPARTMENT_LABELS: Record<string, string> = { warehouse: "Warehousing", lastmile: "Last mile", reverse: "Returns" };
+
 /** The browser's first check of a file before it travels: the API checks again (the real PDF header and size). */
 export function checkPdf(file: { name: string; size: number }): string {
   if (!file.name.toLowerCase().endsWith(".pdf")) return "Choose a PDF file.";

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { BackofficeAnalytics } from "../lib/analytics";
 import { clearSession } from "../lib/auth";
 import type { SampleShipment } from "../lib/demo-data";
+import { RfpLiveFeed } from "./components/RfpLiveFeed";
 
 type DisplayShipment = Omit<SampleShipment, "createdAt"> & { createdAt: string };
 
@@ -128,6 +129,7 @@ export function BackofficeDashboard({ shipments, analytics }: BackofficeDashboar
           <a className="nav-item" href="#shipments"><span className="nav-glyph" aria-hidden="true">↗</span>Shipments<span className="nav-count">{shipments.length.toString().padStart(2, "0")}</span></a>
           <a className="nav-item" href="#m2-title"><span className="nav-glyph" aria-hidden="true">⌖</span>M2 analytics</a>
           <Link className="nav-item" href="/backoffice/inventory/products"><span className="nav-glyph" aria-hidden="true">▤</span>Inventory</Link>
+          <Link className="nav-item" href="/backoffice/rfp"><span className="nav-glyph" aria-hidden="true">✉</span>RFP intake</Link>
           <Link className="nav-item" href="/backoffice/incidents"><span className="nav-glyph" aria-hidden="true">!</span>Incidents</Link>
           <Link className="nav-item" href="/backoffice/incidents/analyze"><span className="nav-glyph" aria-hidden="true">≣</span>Analyze incidents</Link>
           <Link className="nav-item" href="/account/profile"><span className="nav-glyph" aria-hidden="true">☺</span>My account</Link>
@@ -150,6 +152,8 @@ export function BackofficeDashboard({ shipments, analytics }: BackofficeDashboar
             <article className="summary-card"><div className="summary-top"><span>NEEDS HANDOFF</span><span className="summary-symbol orange">◷</span></div><strong>{handoffCount.toString().padStart(2, "0")}</strong><p>Illustrative status count</p></article>
             <article className="summary-card location-card"><div className="summary-top"><span>WAREHOUSE SITES</span><span className="summary-symbol">⌖</span></div><strong>02</strong><p>Example warehouse sites</p></article>
           </section>
+
+          <RfpLiveFeed />
 
           <section className="shipment-section" id="shipments" aria-labelledby="shipment-title">
             <div className="section-title-row"><div><p className="eyebrow">SAMPLE OPERATIONS <span className="demo-inline">DEMO</span></p><h2 id="shipment-title">Shipment activity</h2></div><a className="text-link" href="#shipment-title">View all <span aria-hidden="true">→</span></a></div>

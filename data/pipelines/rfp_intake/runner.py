@@ -13,7 +13,7 @@ from pathlib import Path
 
 from sqlmodel import Session
 
-from . import store, trace
+from . import notifications, store, trace
 from .config import ROOT
 from .convert import ConversionError
 from .graph import WORKER_NODES, compile_graph
@@ -106,6 +106,13 @@ def run_intake(ticket_id: str, engine) -> str:
                     label = "Departments are analysing their part" if pending_workers else "Writing the summary"
                 with Session(engine) as session:
                     store.record_step(session, ticket_id, label or "Working", output.get("steps", []))
+                if node == "analyze":  # the classifier accepted the document and its metadata is read: a new RFP ticket enters the system as `analyzing`
+                    with Session(engine) as session:
+                        store.record_valid_rfp(session, ticket_id, state["classification"], state["metadata"], state["readability"])
+                        created = store.get_ticket(session, ticket_id)
+                        payload = notifications.ticket_created_payload(created)
+                    trace.record(engine, ticket_id, 1, "notifier", "rfp_ticket_created", {"status": payload["status"]}, {"event": notifications.EVENT_TICKET_CREATED, "ticket_id": payload["ticket_id"]})
+                    notifications.publish(notifications.EVENT_TICKET_CREATED, payload)
         with Session(engine) as session:
             store.finish_ticket(session, ticket_id, state)
             return store.get_ticket(session, ticket_id).status

@@ -114,6 +114,17 @@ def _engine_of(state: dict) -> str:
     return "rules" if engines <= {"rules"} else "mixed"
 
 
+def record_valid_rfp(session: Session, ticket_id: str, classification: dict, meta: dict, cost: dict) -> None:
+    """A document the classifier accepted: its verdict and metadata are stored NOW (the ticket stays `analyzing`), so what the notification says about the ticket is what the API shows."""
+    ticket = get_ticket(session, ticket_id)
+    ticket.is_rfp, ticket.document_type = classification["is_rfp"], classification["document_type"]
+    ticket.classification_reason, ticket.classification_confidence = classification["reason"], classification["confidence"]
+    _apply_metadata(ticket, meta, cost)
+    ticket.updated_at = now()
+    session.add(ticket)
+    session.commit()
+
+
 def finish_ticket(session: Session, ticket_id: str, state: dict) -> None:
     """The end of a run that completed: the verdict, and for a valid RFP its metadata, sections, summary and handoff, in ONE transaction (a ticket is never
     `intake_complete` without its sections)."""
