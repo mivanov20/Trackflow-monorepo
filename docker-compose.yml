@@ -104,6 +104,8 @@ services:
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
       LLM_MODEL: ${LLM_MODEL:-}
       RAG_MIN_SCORE: ${RAG_MIN_SCORE:-0.35}
+      # Agente de soporte (LangGraph): los checkpoints de cada ejecución se guardan en este archivo del volumen `api-data`.
+      AGENT_CHECKPOINT_DB: ${AGENT_CHECKPOINT_DB:-/data/agent-checkpoints.sqlite}
       # Recarga fiable sobre carpetas montadas desde Windows y macOS.
       WATCHFILES_FORCE_POLLING: "true"
     volumes:
