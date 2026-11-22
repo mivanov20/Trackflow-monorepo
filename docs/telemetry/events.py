@@ -957,3 +957,60 @@ EVENTS = [
         example=dict(service="api", startup_duration_ms=1840, database_kind="postgresql", email_provider="resend", reload_enabled=False),
     ),
 ]
+
+
+# --- storage mapping (Phase 3): how an event becomes a row of `telemetry_events` ----------------
+
+# Severity of the row. Events that report a problem are `warn`; failures of the platform itself are `error`.
+LEVELS = {
+    "frontend_error_caught": "error",
+    "api_error_returned": "error",
+    "email_delivery_failed": "error",
+    "stock_integrity_violation_detected": "error",
+    "network_request_failed": "warn",
+    "login_failed": "warn",
+    "login_attempt_failed": "warn",
+    "session_expired": "warn",
+    "access_denied": "warn",
+    "password_reset_rejected": "warn",
+    "password_change_rejected": "warn",
+    "direct_stock_edit_rejected": "warn",
+    "inbound_order_rejected": "warn",
+    "outbound_order_rejected": "warn",
+    "incident_file_rejected": "warn",
+    "stock_threshold_triggered": "warn",
+    "inventory_discrepancy_detected": "warn",
+    "query_slow_detected": "warn",
+}
+
+# The numeric property copied to the `value` column, so the next phase can SUM or AVG without opening the JSON.
+VALUE_PROPERTY = {
+    "inbound_order_created": "quantity",
+    "outbound_order_created": "quantity",
+    "stock_threshold_triggered": "quantity",
+    "direct_stock_edit_rejected": "quantity",
+    "inventory_discrepancy_detected": "quantity",
+    "inbound_order_rejected": "quantity",
+    "outbound_order_rejected": "quantity",
+    "stock_integrity_violation_detected": "quantity",
+    "login_attempt_failed": "attempt_number",
+    "login_failed": "attempts_in_window",
+    "password_change_rejected": "attempts_in_window",
+    "session_expired": "session_age_seconds",
+    "incident_status_changed": "incident_age_seconds",
+    "incident_file_analyzed": "duration_ms",
+    "filter_applied": "result_count",
+    "flow_abandoned": "elapsed_seconds",
+    "form_validation_failed": "error_count",
+    "api_latency_recorded": "duration_ms",
+    "api_error_returned": "duration_ms",
+    "network_request_failed": "duration_ms",
+    "query_slow_detected": "duration_ms",
+    "page_load_recorded": "lcp_ms",
+    "frontend_error_caught": "occurrences",
+    "service_started": "startup_duration_ms",
+}
+
+for _event in EVENTS:
+    _event["level"] = LEVELS.get(_event["type"], "info")
+    _event["value_property"] = VALUE_PROPERTY.get(_event["type"])
