@@ -38,6 +38,7 @@ STATE (no conversation history: one question at a time; what the agent keeps is 
     outcome    how the run ended: generated | no_context | empty_question | needs_ticket_id | tool_unavailable | memory_decision
     conversation_id / actor   who the memory belongs to and who authorises it (set only for memory-enabled conversations)
     memory_decision, memory_notice, memory_candidate, memory_proposal, memories_used   the memory step's inputs and outputs (see above)
+    verified_facts, scope_subtype   from the harness (docs/agent/guardrails-design.md): the verified records of the customer's own orders, and the kind of casual message to answer briefly
 """
 
 from __future__ import annotations
@@ -49,6 +50,7 @@ from langgraph.graph import END, START, StateGraph
 from data.pipelines import rag
 
 from . import tools
+from .guardrails import prompt as secure_prompt
 from .memory import decisions as memory_decisions
 from .memory import generation as memory_generation
 from .memory import policy as memory_policy
@@ -85,6 +87,8 @@ class AgentState(TypedDict, total=False):
     memory_candidate: dict
     memory_proposal: dict
     memories_used: list
+    verified_facts: list
+    scope_subtype: str
 
 
 class AgentBuildError(RuntimeError):
@@ -134,11 +138,16 @@ def generate(state: AgentState) -> dict:
     store, not kept in the prompt) go in, and a `memory_proposal` (the agent's self-evaluation of this interaction) comes out. A proposal only travels in the state;
     nothing is remembered here.
     """
-    blocks = [*tools.live_chunks(state.get("live_data") or []), *(state.get("context") or [])]
+    blocks = [*(state.get("verified_facts") or []), *tools.live_chunks(state.get("live_data") or []), *(state.get("context") or [])]
+    subtype = state.get("scope_subtype") or None
     if not state.get("conversation_id"):
-        return {"answer": rag.generate_answer(state["question"], blocks), "outcome": "generated"}
+        token = rag.active_system_prompt.set(secure_prompt.system_prompt(subtype))  # the agent's secure prompt, for this call only
+        try:
+            return {"answer": rag.generate_answer(state["question"], blocks), "outcome": "generated"}
+        finally:
+            rag.active_system_prompt.reset(token)
     memories = memory_store.get_store().recall(state["question"])
-    turn = memory_generation.generate_with_self_evaluation(state["question"], blocks, memories)
+    turn = memory_generation.generate_with_self_evaluation(state["question"], blocks, memories, subtype)
     update: dict = {"answer": turn.answer, "outcome": "generated", "memories_used": [m.id for m in memories]}
     if turn.proposal_raw:
         update["memory_candidate"] = turn.proposal_raw
@@ -220,7 +229,7 @@ def next_node(state: AgentState, current: str | None = None) -> str:
     if index < len(steps):
         return STEP_NODE[steps[index]]
     live = state.get("live_data") or []
-    if state.get("context") or any(result["status"] == "ok" for result in live):
+    if state.get("context") or state.get("verified_facts") or any(result["status"] == "ok" for result in live):
         return GENERATE
     if state.get("conversation_id") and memory_store.get_store().recall(state["question"], touch=False):
         return GENERATE  # nothing else answers, but the agent remembers something relevant that a support agent confirmed

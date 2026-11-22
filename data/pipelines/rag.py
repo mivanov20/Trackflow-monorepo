@@ -16,6 +16,7 @@ returned to a caller; they are only logged on the server.
 from __future__ import annotations
 
 import logging
+from contextvars import ContextVar
 from typing import Callable
 
 from qdrant_client import QdrantClient
@@ -42,6 +43,18 @@ ANSWER_RULES = """Rules:
 
 SYSTEM_PROMPT = COMMERCIAL_INTRO + "\n\n" + ANSWER_RULES
 
+# Two seams the agent's harness uses (set from services/agent/guardrails; the RAG endpoint is hardened by the same hooks when they are set):
+#  * the context filter: every retrieved or tool-provided text passes through it before it is placed in a prompt (isolation of untrusted content);
+#  * the active system prompt: the agent sets its secure prompt for the duration of a call; without it, `SYSTEM_PROMPT` above is used.
+active_system_prompt: ContextVar[str | None] = ContextVar("rag_active_system_prompt", default=None)
+_context_filter: Callable[[str, str], str] | None = None
+
+
+def set_context_filter(function: Callable[[str, str], str] | None) -> None:
+    global _context_filter
+    _context_filter = function
+
+
 NO_CONTEXT_NOTE = "There is NO relevant information in the knowledge base for this question. Follow rule 1: say that you do not have that information and who should confirm it. Do not answer the question itself."
 
 
@@ -65,12 +78,15 @@ def retrieve(query: str, *, k: int = config.TOP_K, min_score: float | None = Non
 def build_messages(question: str, context: list[dict]) -> list[dict]:
     """Prompt assembly: the rules, the retrieved chunks with their source headers, and the question."""
     if context:
-        blocks = [f"[{index}] Source: {chunk['source_document']} | Section: {chunk['section']}\n{chunk['text']}" for index, chunk in enumerate(context, start=1)]
+        def text_of(chunk: dict) -> str:
+            return _context_filter(chunk["text"], chunk["source_document"]) if _context_filter else chunk["text"]
+
+        blocks = [f"[{index}] Source: {chunk['source_document']} | Section: {chunk['section']}\n{text_of(chunk)}" for index, chunk in enumerate(context, start=1)]
         context_text = "\n\n".join(blocks)
     else:
         context_text = NO_CONTEXT_NOTE
     user = f"Context:\n{context_text}\n\nQuestion: {question}"
-    return [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user}]
+    return [{"role": "system", "content": active_system_prompt.get() or SYSTEM_PROMPT}, {"role": "user", "content": user}]
 
 
 def generate_answer(question: str, context: list[dict]) -> str:

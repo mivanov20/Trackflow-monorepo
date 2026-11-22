@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 
 from ..schemas import IncidentRead, SKURead
 from . import mcp_client
+from .guardrails import events
 
 TOOL_TIMEOUT_SECONDS = float(os.getenv("AGENT_TOOL_TIMEOUT_SECONDS", "4"))
 MAX_PRODUCTS = 5
@@ -121,6 +122,7 @@ def lookup_ticket(ticket_id: int, *, timeout: float = TOOL_TIMEOUT_SECONDS) -> T
         ticket = IncidentRead.model_validate(record)
         summary = {"id": ticket.id, "status": ticket.status, "category": ticket.category, "origin": record["origin"], "branch": ticket.branch, "updated_at": record["updated_at"]}
     except Exception:  # noqa: BLE001 - the MCP server answered with a record that is not an incident: do not guess from it
+        events.record("tool_format", "structural", "replaced", "the incident manager answered with a record that is not an incident")
         return ToolResult(**base, status="unavailable", message="The incident manager answered with data in an unexpected shape.")
     return ToolResult(**base, status="ok", data=record, summary=summary)
 
@@ -144,6 +146,7 @@ def lookup_stock(product_query: str, *, timeout: float = TOOL_TIMEOUT_SECONDS) -
     try:
         products = [SKURead.model_validate(r) for r in records]
     except Exception:  # noqa: BLE001
+        events.record("tool_format", "structural", "replaced", "the inventory manager answered with records that are not products")
         return ToolResult(**base, status="unavailable", message="The inventory manager answered with data in an unexpected shape.")
     summary = {"matches": [{"sku": p.sku, "warehouse": p.warehouse, "current_stock": p.current_stock} for p in products]}
     return ToolResult(**base, status="ok", data=records, summary=summary)

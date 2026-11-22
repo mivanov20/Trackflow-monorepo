@@ -46,7 +46,7 @@ def test_a_question_returns_the_generated_answer_and_a_run_id(incident_client, p
     response = incident_client.post("/agent/query", json={"question": "Can we guarantee delivery times on Black Friday?"})
     assert response.status_code == 200
     body = response.json()
-    assert set(body) == {"answer", "run_id", "sources", "conversation_id", "memory"} and body["answer"].startswith("No SLA is guaranteed") and body["sources"] == ["rag"]
+    assert set(body) == {"answer", "run_id", "sources", "conversation_id", "memory", "outcome", "guardrail"} and body["answer"].startswith("No SLA is guaranteed") and body["sources"] == ["rag"]
     assert body["conversation_id"] is None and body["memory"] is None  # no conversation id: no memory, nothing proposed
     uuid.UUID(body["run_id"])
     assert "0.91" not in response.text and CHUNK["text"] not in response.text  # no chunks, no scores to the client

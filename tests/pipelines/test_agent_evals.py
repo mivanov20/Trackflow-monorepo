@@ -185,7 +185,8 @@ def test_eval_6_a_failure_is_in_the_trace_and_the_run_resumes_from_its_checkpoin
 def test_the_state_is_explicit_and_carries_no_conversation_history():
     # part 1 had four fields; part 2 added `plan` and `live_data`; the memory milestone adds the ones of its own step (tests/pipelines/test_agent_memory.py): each one is read by a later node
     memory_fields = {"conversation_id", "actor", "memory_decision", "memory_notice", "memory_candidate", "memory_proposal", "memories_used"}
-    assert set(AgentState.__annotations__) == {"question", "plan", "live_data", "context", "answer", "outcome"} | memory_fields
+    harness_fields = {"verified_facts", "scope_subtype"}  # milestone 8 part 2: what the harness hands the graph (tests/pipelines/test_agent_guardrails.py)
+    assert set(AgentState.__annotations__) == {"question", "plan", "live_data", "context", "answer", "outcome"} | memory_fields | harness_fields
     assert not {"messages", "history", "conversation"} & set(AgentState.__annotations__)
 
 

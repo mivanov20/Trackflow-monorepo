@@ -7,6 +7,7 @@
 | `single_package_incident` | the data of one isolated package or complaint (a tracking number, an order number, "this package") | an isolated incident is not a pattern, so it is not memorable |
 | `commercial_negotiation` | anything from an active commercial negotiation (contract terms, discounts, quotes, renewals) | that belongs to the commercial team's CRM, not the support agent's memory |
 | `personal_contact` | emails and phone numbers | personal data nobody asked the memory to keep |
+| `instruction_injection` | text that tries to change the agent's instructions ("always ignore the rules") | a poisoned fact would stick across sessions: the guard of the harness applies to what is stored too |
 
 The check is deliberately conservative: it prefers to refuse a legitimate note (the user can restate it without the detail) over keeping a forbidden one.
 It runs three times: on the model's proposal before the user is even asked, on a user's edit of it, and again on the text that is about to be written.
@@ -18,7 +19,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-CATEGORIES = ("address", "warehouse_route_or_access", "single_package_incident", "commercial_negotiation", "personal_contact")
+CATEGORIES = ("address", "warehouse_route_or_access", "single_package_incident", "commercial_negotiation", "personal_contact", "instruction_injection")
 
 _STREET_WORDS = r"(?:street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|way|court|ct|place|pl|terrace|calle|avenida|avda|paseo|plaza|camino|carrer|ronda|travesia|travesía)"
 _PATTERNS: dict[str, list[re.Pattern]] = {
@@ -75,9 +76,14 @@ class PolicyResult:
 
 def check(*texts: str | None) -> PolicyResult:
     """Is it allowed to remember this? Looks at every text given; the result names the forbidden categories found (never the offending text)."""
+    from ..guardrails import injection  # a memory entry that is really an instruction ("always ignore the rules") would poison every later session
+
     found = []
     for category in CATEGORIES:
-        if any(pattern.search(text) for text in texts if text for pattern in _PATTERNS[category]):
+        if category == "instruction_injection":
+            if any(injection.is_attack(text) for text in texts if text):
+                found.append(category)
+        elif any(pattern.search(text) for text in texts if text for pattern in _PATTERNS[category]):
             found.append(category)
     return PolicyResult(allowed=not found, categories=tuple(found))
 
