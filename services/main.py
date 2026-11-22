@@ -13,12 +13,14 @@ from .database import SERVICE_UNAVAILABLE_MESSAGE, create_db_and_tables, engine,
 from .routers.incident_analysis import router as incident_analysis_router, validate_analysis_config
 from .routers.incidents import router as incidents_router
 from .routers.inventory import router as inventory_router
+from .routers.agent import router as agent_router
 from .routers.knowledge import router as knowledge_router
 from .routers.profiles import router as profiles_router
 from .reporting.router import router as reporting_router
 from .routers.tasks import router as tasks_router
 from .routers.telemetry import router as telemetry_router, validate_telemetry_config
 from .routers.users import router as users_router
+from .agent import validate_agent
 from .mailer import validate_email_config
 from .security import validate_security_config
 from data.pipelines.weekly_performance.schema import ensure_reporting
@@ -35,6 +37,7 @@ async def lifespan(_: FastAPI):
     validate_email_config()
     validate_analysis_config()
     validate_telemetry_config()
+    validate_agent()  # compiles the agent graph: a structural mistake stops the API here, not on a user's question
     create_db_and_tables()
     ensure_user_uid_columns()
     try:
@@ -95,6 +98,7 @@ app.include_router(telemetry_router)
 app.include_router(reporting_router)
 app.include_router(tasks_router)
 app.include_router(knowledge_router)
+app.include_router(agent_router)
 
 
 @app.get("/health", tags=["health"])

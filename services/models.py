@@ -194,3 +194,28 @@ class DeadLetterTask(SQLModel, table=True):
     error_message: str = Field(sa_column=Column(Text, nullable=False))
     payload: dict = Field(default_factory=dict, sa_column=Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False, server_default=text("'{}'")))
     failed_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class AgentTraceStep(SQLModel, table=True):
+    """The trace of the support agent: one row per node that ran, in order, with what went in and what came out.
+
+    Written while the run goes on (a node that fails leaves its row with the error), so a run that died half way can still be read.
+    Inputs and outputs are summaries: the retrieved chunks appear as source / section / chunk index / score, never as their full text.
+    """
+
+    __tablename__ = "agent_trace_steps"
+    __table_args__ = (Index("ix_agent_trace_steps_run_id", "run_id", "step"), Index("ix_agent_trace_steps_started_at", "started_at"))
+
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=Column(Uuid, primary_key=True, server_default=text("gen_random_uuid()") if _POSTGRES else None),
+    )
+    run_id: str = Field(sa_column=Column(Text, nullable=False))
+    step: int = Field(sa_column=Column(Integer, nullable=False))
+    node: str = Field(sa_column=Column(Text, nullable=False))
+    status: str = Field(sa_column=Column(Text, nullable=False))  # ok | error
+    started_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
+    duration_ms: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+    input: dict = Field(default_factory=dict, sa_column=Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False, server_default=text("'{}'")))
+    output: dict = Field(default_factory=dict, sa_column=Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False, server_default=text("'{}'")))
+    error: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
