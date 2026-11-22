@@ -7,3 +7,6 @@ docker-compose.yml text eol=lf
 
 # A crontab must keep Unix line endings or cron rejects it
 *.crontab text eol=lf
+
+# Sample RFP PDFs are test inputs: never touch their bytes (line-ending conversion would break the PDF cross-reference table)
+*.pdf binary
