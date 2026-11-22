@@ -347,23 +347,31 @@ def test_the_generation_node_passes_the_context_of_the_retrieve_node_unchanged(m
 
 
 # ================================================================== PART 2: routing between the RAG and the live tools (criteria on the trace)
+FAKE_TICKET = {"id": 482, "title": "Parcel damaged in transit", "description": "The customer reports a crushed box.", "category": "delivery_failure", "status": "in_progress", "origin": "customer", "branch": "central", "created_at": "2026-11-20T09:00:00Z", "updated_at": "2026-11-21T10:30:00Z"}
+FAKE_PRODUCT = {"id": 1, "name": "Blue Hoodie", "sku": "HOOD-BLU-M", "client_name": "Fashion Co", "category": "fashion", "warehouse": "ZGZ", "current_stock": 42}
+
+
+def install_fake_mcp(monkeypatch):
+    """The MCP server as the agent sees it: the same structured answers, no network. (tests/mcps/test_agent_mcp_integration.py runs the real chain.)"""
+    from services.agent import mcp_client
+
+    def call_tool(name, arguments, **kwargs):
+        if name == "get_ticket":
+            if arguments["ticket_id"] == 482:
+                return dict(FAKE_TICKET)
+            raise mcp_client.McpError("NOT_FOUND", "not found")
+        if name == "query_inventory":
+            found = [FAKE_PRODUCT] if arguments["product_query"].lower() in "blue hoodie hood-blu-m fashion co" else []
+            return {"operation": "search", "count": len(found), "products": found}
+        raise AssertionError(f"the agent must not call {name}")
+
+    monkeypatch.setattr(mcp_client, "call_tool", call_tool)
+
+
 @pytest.fixture
 def services(engine, monkeypatch):
-    """The real incident and inventory tables (in memory) that the tools read; the trace is stored in the same database."""
-    from typing import get_args
-
-    from services import database
-    from services.models import SKU, Incident, StockEntry
-    from services.schemas import Category
-
-    monkeypatch.setattr(database, "engine", engine)
-    with Session(engine) as session:
-        session.add(Incident(id=482, title="Parcel damaged in transit", description="The customer reports a crushed box.", category="delivery_failure", status="in_progress", origin="customer", branch="central"))
-        hoodie = SKU(name="Blue Hoodie", sku="HOOD-BLU-M", client_name="Fashion Co", category=get_args(Category)[0], warehouse="ZGZ")
-        session.add(hoodie)
-        session.commit()
-        session.add(StockEntry(sku_id=hoodie.id, quantity=42, reference="PO-1", warehouse="ZGZ", user_uid="u1"))
-        session.commit()
+    """The live systems, reached through a fake MCP server; the trace is stored in the test database."""
+    install_fake_mcp(monkeypatch)
     return engine
 
 
@@ -432,9 +440,7 @@ def test_eval_11_a_timeout_and_a_missing_ticket_take_the_same_honest_path(monkey
     assert runner.run_trace("eval-11a", engine=services)[2]["output"]["live_data"][0]["status"] == "timeout" and "couldn't confirm" in timeout.answer
     monkeypatch.undo()
     Pipeline(monkeypatch)
-    from services import database
-
-    monkeypatch.setattr(database, "engine", services)
+    install_fake_mcp(monkeypatch)
     missing = runner.run_agent("What's the status of ticket 99999?", graph=agent, engine=services, run_id="eval-11b")
     steps = runner.run_trace("eval-11b", engine=services)
     assert nodes_of(steps)[-1] == "answer_unavailable" and steps[2]["output"]["live_data"][0]["status"] == "not_found"
