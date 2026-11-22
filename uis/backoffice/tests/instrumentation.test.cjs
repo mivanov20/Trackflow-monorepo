@@ -408,8 +408,20 @@ test("domain helpers map application values to the closed vocabularies", () => {
 
 test("the browser's schema file is the one generated from the plan", () => {
   const generated = createLoader()("lib/telemetry-schema.generated.ts");
-  assert.equal(generated.TELEMETRY_SCHEMA_VERSION, "1.1.0");
+  assert.equal(generated.TELEMETRY_SCHEMA_VERSION, "1.2.0");
   for (const mandatory of ["inbound_order_created", "outbound_order_created", "stock_threshold_triggered", "direct_stock_edit_rejected", "inventory_discrepancy_detected"]) {
     assert.ok(generated.EVENT_SCHEMAS[mandatory], mandatory);
   }
+});
+
+test("a successful sign-in records login_succeeded with the failures of this visit, and no email", async () => {
+  const { load, events } = environment();
+  const { signIn } = load("lib/auth.ts");
+  fakeFetch(() => ({ status: 401, body: { detail: "Email or password is incorrect." } }));
+  await assert.rejects(signIn("ana@example.com", "wrong-pass-1"));
+  fakeFetch(() => ({ status: 200, body: { access_token: "t2", token_type: "bearer", expires_in: 100, user: USER } }));
+  await signIn("ana@example.com", "right-pass-1");
+  const success = events.find((e) => e.eventType === "login_succeeded");
+  assert.deepEqual(success.properties, { user_role: "manager", method: "password", failures_before_success: 1 });
+  assert.ok(!JSON.stringify(events).includes("ana@example.com"));
 });

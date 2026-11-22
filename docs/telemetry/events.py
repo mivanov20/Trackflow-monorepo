@@ -18,7 +18,7 @@ from trackflow_shared.incident_analysis import RULE_KEYS  # noqa: E402
 from trackflow_shared.incidents import BRANCHES, CATEGORIES as INCIDENT_CATEGORIES  # noqa: E402
 from trackflow_shared.incidents import ORIGINS as INCIDENT_ORIGINS, STATUSES as INCIDENT_STATUSES  # noqa: E402
 
-SCHEMA_VERSION = "1.1.0"  # 1.1.0: adds login_attempt_failed; frontend error fingerprint is a 64-bit hash
+SCHEMA_VERSION = "1.2.0"  # 1.2.0: login_succeeded.is_first_login optional, section telemetry_report. 1.1.0: login_attempt_failed
 
 # --- shared vocabularies -----------------------------------------------------------------
 
@@ -29,7 +29,7 @@ USER_ROLES = ["admin", "manager", "user"]
 DEVICE_CLASSES = ["desktop", "tablet", "mobile"]
 CONNECTION_TYPES = ["4g", "3g", "2g", "slow-2g", "unknown"]
 SECTIONS = [
-    "overview", "inventory_products", "inventory_inbound_order", "inventory_outbound_order", "inventory_order_history", "inventory_stock_count",
+    "overview", "inventory_products", "inventory_inbound_order", "inventory_outbound_order", "inventory_order_history", "inventory_stock_count", "telemetry_report",
     "incidents_list", "incidents_new", "incidents_file_analysis", "account_profile", "account_change_password",
     "auth_login", "auth_register", "auth_forgot_password", "auth_reset_password", "other",
 ]
@@ -387,8 +387,10 @@ EVENTS = [
         properties=[
             S("user_role", "Role of the user who signed in.", enum=USER_ROLES, how="User.role."),
             S("method", "How the user authenticated. Only `password` exists today; the field keeps the schema stable if single sign-on is added.", enum=["password"], how="Constant today."),
-            I("failures_before_success", "Failed attempts for this account in the previous 15 minutes.", minimum=0, how="Counted server-side from `login_failed` events for the same account."),
-            B("is_first_login", "Whether this is the first sign-in of the account.", how="No earlier `login_succeeded` for this user."),
+            I("failures_before_success", "Failed attempts before this success: for this account in the previous 15 minutes when the API produces the event, for the current visit to the sign-in page when the browser does.", minimum=0,
+              how="Server: counted from `login_failed` events for the same account. Browser: the in-memory counter of consecutive failed sign-ins, the same one `login_attempt_failed.attempt_number` uses."),
+            _prop("is_first_login", "Whether this is the first sign-in of the account. Null (and left out) when the producer cannot know, as the browser.",
+                  {"type": ["boolean", "null"]}, required=False, how="Server: no earlier `login_succeeded` for this user. The browser omits it.", label="boolean or null"),
         ],
         example=dict(user_role="user", method="password", failures_before_success=1, is_first_login=False),
     ),

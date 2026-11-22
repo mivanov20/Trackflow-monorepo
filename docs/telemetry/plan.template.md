@@ -373,3 +373,47 @@ Indexes: `timestamp` (B-tree), `event_type` (B-tree) and `tags` (GIN, for contai
 - **No authentication or rate limit** on the endpoint (section 9.2).
 - **`service` is a constant** while the browser is the only producer.
 - **`timestamp` is the browser's clock.** A wrong clock misplaces the event; the arrival time is not stored.
+
+## 14. Phase 4: the operational report
+
+A technical radar for the engineering team, calculated from the rows of `telemetry_events`: how healthy the system is, how fast it answers, where it fails and which events dominate. It is not a business report: no conversion, no revenue. Those belong to the data pipelines that come later.
+
+### 14.1 The pipeline
+
+`services/telemetry/analysis.py` has one independent function per operational question. Each takes the period (`start_date` inclusive, `end_date` exclusive, UTC) and follows the same order:
+
+1. **Load (SQL):** only the columns and event types the metric needs, filtered by `timestamp >= start AND timestamp < end` and, when it needs specific types, `event_type IN (...)` in the query. Never the whole table, and a row cap as a safety net.
+2. **Refine (Pandas):** extract the `tags` dimensions the metric needs, drop rows whose dimension is null.
+3. **Convert types:** `pd.to_datetime(..., utc=True)` before any grouping. Grouping date-looking strings gives wrong groups with no error.
+4. **Group and aggregate:** `groupby` with `size`, `sum`, `mean`, `quantile`. No loops.
+5. **Serve:** a list of plain dicts (`NaN` becomes `null`, days are `YYYY-MM-DD`).
+
+Every metric has a grouping dimension (day, event type, route, section). None is a global number.
+
+| Key in the report | Question | Grouped by | Events it reads |
+|---|---|---|---|
+| `events_per_day` | How much telemetry does the system produce, and of what kind? | day, event type | all |
+| `error_rate_by_day` | Is the system getting worse? | day | all (`level`) |
+| `error_rate_by_type` | Which failures dominate? | event type, level | all (`level` warn or error) |
+| `page_load_latency_by_day` | How fast do screens load? | day, section | `page_load_recorded` (`ttfb_ms`, `lcp_ms`) |
+| `network_failures_by_route` | Where does the browser lose the API? | day, API route, failure kind | `network_request_failed` |
+| `frontend_errors_by_route` | Which screens crash? | day, route, error class | `frontend_error_caught` |
+| `auth_failure_rate` | Can people sign in? | day | `login_attempt_failed`, `login_succeeded` |
+
+`auth_failure_rate` is the daily share `login_attempt_failed / (login_attempt_failed + login_succeeded)`. The browser produces both events in this phase, so `login_succeeded.is_first_login`, which only the server can know, became optional in schema 1.2.0.
+
+### 14.2 The endpoint
+
+`GET /telemetry/report?start_date=...&end_date=...` (signed-in users only):
+
+- Both parameters are ISO 8601 and optional. A date without a zone is UTC. With none, the period is the last 7 days (`now - 7d` to `now`). Only `end_date` gives the 7 days before it; only `start_date` runs until now. A reversed or empty period, or one longer than 90 days, is a `422`.
+- The period is resolved once and passed to every metric function; the functions never apply a default window of their own.
+- The answer is `{"period": {"from", "to"}, "metrics": {<key>: [...]}}`.
+- The result is cached in memory for 60 seconds per period, so the pipeline does not run on every request. Requests without parameters share one entry. The header `X-Cache` says `HIT` or `MISS`.
+
+### 14.3 Limits
+
+- The cache is per process: with several API workers each keeps its own, and a restart empties it.
+- Events can be duplicated (section 13.5), which slightly inflates counts; the report does not de-duplicate yet.
+- Any signed-in user can read the report. Restricting it to an engineering role needs a role for that, which the accounts do not have.
+- `page_load_latency_by_day` reports time to first byte, which every load has. Largest paint is only measured in some browsers and loads, and is `null` when absent.

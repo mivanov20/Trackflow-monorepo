@@ -3,7 +3,7 @@
   "$id": "https://trackflow.example/telemetry/event-schemas.json",
   "title": "TrackFlow telemetry event schemas",
   "description": "Validate an event in two steps: it must match #/definitions/envelope, then the schema at #/events/<event_type>, which re-applies the envelope, fixes the event_type and allowlists the properties. Unknown properties are rejected (additionalProperties: false). Custom x-* keywords are documentation for humans and for the pipeline; validators ignore them.",
-  "x-schemaVersion": "1.1.0",
+  "x-schemaVersion": "1.2.0",
   "x-taxonomy": {
     "verbs": {
       "created": "a business record was persisted (after the commit, never before)",
@@ -1332,8 +1332,7 @@
               "required": [
                 "user_role",
                 "method",
-                "failures_before_success",
-                "is_first_login"
+                "failures_before_success"
               ],
               "additionalProperties": false,
               "properties": {
@@ -1358,12 +1357,15 @@
                 "failures_before_success": {
                   "type": "integer",
                   "minimum": 0,
-                  "description": "Failed attempts for this account in the previous 15 minutes.",
+                  "description": "Failed attempts before this success: for this account in the previous 15 minutes when the API produces the event, for the current visit to the sign-in page when the browser does.",
                   "x-pii": "none"
                 },
                 "is_first_login": {
-                  "type": "boolean",
-                  "description": "Whether this is the first sign-in of the account.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ],
+                  "description": "Whether this is the first sign-in of the account. Null (and left out) when the producer cannot know, as the browser.",
                   "x-pii": "none"
                 }
               }
@@ -2498,6 +2500,7 @@
                     "inventory_outbound_order",
                     "inventory_order_history",
                     "inventory_stock_count",
+                    "telemetry_report",
                     "incidents_list",
                     "incidents_new",
                     "incidents_file_analysis",
@@ -2530,6 +2533,7 @@
                     "inventory_outbound_order",
                     "inventory_order_history",
                     "inventory_stock_count",
+                    "telemetry_report",
                     "incidents_list",
                     "incidents_new",
                     "incidents_file_analysis",
@@ -2622,6 +2626,7 @@
                     "inventory_outbound_order",
                     "inventory_order_history",
                     "inventory_stock_count",
+                    "telemetry_report",
                     "incidents_list",
                     "incidents_new",
                     "incidents_file_analysis",
@@ -3023,6 +3028,7 @@
                     "inventory_outbound_order",
                     "inventory_order_history",
                     "inventory_stock_count",
+                    "telemetry_report",
                     "incidents_list",
                     "incidents_new",
                     "incidents_file_analysis",
