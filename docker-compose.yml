@@ -2,12 +2,23 @@
 #
 #   ui  -> website (http://localhost:3000) y backoffice (http://localhost:3001), con `next dev`
 #   api -> FastAPI (http://localhost:8000, docs en /docs), con `uvicorn --reload`
+#   redis, worker, flower -> cola de tareas de Celery (Flower en http://localhost:5555)
 #
 # El código se monta desde el equipo (bind mounts): los cambios se ven sin reconstruir imágenes.
 # Los valores salen de variables de entorno: copia `.env.example` a `.env` para cambiarlos.
 # Aquí solo hay valores por defecto no secretos; ningún secreto vive en este archivo.
 #
 # Los contenedores se hablan por NOMBRE DE SERVICIO (ui -> http://api:8000), nunca por localhost.
+
+# Cómo se construye la imagen de la API. El worker de Celery usa la MISMA imagen (otro comando), así que comparte esta receta:
+# Compose la construye una vez y el worker nunca arranca sin ella.
+x-api-build: &api-build
+  context: ./services
+  additional_contexts:
+    # Librería compartida (validación de incidencias) que requirements.txt instala con `-e ./packages/shared`.
+    shared: ./packages/shared
+    # Pipelines de datos: services/reporting importa `data.pipelines` (no hay lógica de pipeline en services/).
+    pipelines: ./data/pipelines
 
 name: trackflow
 
@@ -55,13 +66,7 @@ services:
       - trackflow-net
 
   api:
-    build:
-      context: ./services
-      additional_contexts:
-        # Librería compartida (validación de incidencias) que requirements.txt instala con `-e ./packages/shared`.
-        shared: ./packages/shared
-        # Pipelines de datos: services/reporting importa `data.pipelines` (no hay lógica de pipeline en services/).
-        pipelines: ./data/pipelines
+    build: *api-build
     image: trackflow-api:dev
     init: true
     ports:
@@ -87,6 +92,8 @@ services:
       PASSWORD_RESET_EXPIRE_MINUTES: ${PASSWORD_RESET_EXPIRE_MINUTES:-30}
       PASSWORD_RESET_COOLDOWN_SECONDS: ${PASSWORD_RESET_COOLDOWN_SECONDS:-60}
       ANALYSIS_MAX_UPLOAD_MB: ${ANALYSIS_MAX_UPLOAD_MB:-250}
+      # La API solo ENCOLA tareas en Redis (responde 202); el worker las ejecuta.
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       # Recarga fiable sobre carpetas montadas desde Windows y macOS.
       WATCHFILES_FORCE_POLLING: "true"
     volumes:
@@ -103,12 +110,73 @@ services:
     networks:
       - trackflow-net
 
+  # Broker y backend de resultados de Celery. `noeviction`: si se llena, rechaza escrituras en vez de borrar mensajes
+  # de la cola (una cola que pierde mensajes en silencio es peor que una que avisa). `appendonly`: los mensajes en cola
+  # sobreviven a un reinicio de Redis.
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory-policy", "noeviction", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - trackflow-net
+
+  # Worker de Celery: un PROCESO APARTE de la API (misma imagen, otro comando). Parar la API no lo para, y los mensajes
+  # esperan en Redis aunque el worker esté caído. Una tarea a la vez: el pipeline usa un servidor temporal de Prefect.
+  worker:
+    build: *api-build
+    image: trackflow-api:dev
+    init: true
+    command: ["celery", "-A", "services.celery_app", "worker", "--loglevel=INFO", "--concurrency=1", "--hostname=worker@%h"]
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////data/trackflow-dev.db}
+      TASK_RETRY_BACKOFF_SECONDS: ${TASK_RETRY_BACKOFF_SECONDS:-5}
+    volumes:
+      - ./services:/app/services
+      - ./packages/shared:/app/packages/shared
+      - ./data/pipelines:/app/data/pipelines
+      - api-data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A services.celery_app inspect ping -d worker@$$HOSTNAME"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks:
+      - trackflow-net
+
+  # Flower: panel de la cola en http://localhost:5555 (tareas en cola, en curso, completadas y fallidas).
+  flower:
+    image: mher/flower:2.0.1
+    command: ["celery", "flower", "--port=5555"]
+    environment:
+      CELERY_BROKER_URL: ${REDIS_URL:-redis://redis:6379/0}
+    ports:
+      - "${FLOWER_HOST_PORT:-5555}:5555"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - trackflow-net
+
 networks:
   trackflow-net:
     name: trackflow-net
 
 volumes:
   api-data:
+  redis-data:
   ui-website-node-modules:
   ui-website-next:
   ui-backoffice-node-modules:

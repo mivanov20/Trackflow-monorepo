@@ -16,6 +16,7 @@ from services.accounts import Role, User
 from services.auth import get_current_user
 from services.main import app
 from services.models import TelemetryEventRecord
+from services.tasks import run_weekly_performance_pipeline
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 KPI_FIELDS = {"warehouse", "client_id", "inbound_units_count", "outbound_orders_count", "stockout_events_count", "discrepancy_events_count", "discrepancy_rate"}
@@ -114,15 +115,38 @@ def test_trigger_needs_authentication_and_the_manager_or_admin_role(api):
     assert api.get("/reporting/weekly-warehouse-client-performance").status_code == 401
 
 
-def test_trigger_starts_the_flow_through_the_function_of_data_pipelines(as_manager, incident_engine, monkeypatch, tmp_path):
+class FakeTask:
+    """What `.delay` returns."""
+
+    id = "00000000-0000-4000-8000-000000000001"
+
+
+def enqueue_stub(monkeypatch, execute=False):
+    """Replaces `.delay`. With execute=True the worker's job is done on the spot, so the test can read the result."""
+    calls = []
+
+    def delay(run_id, week_start=None, weeks_back=2, triggered_by=None):
+        calls.append((run_id, week_start, weeks_back, triggered_by))
+        if execute:
+            from datetime import date as _date
+
+            pipeline.run_manual_flow(run_id, _date.fromisoformat(week_start) if week_start else None, weeks_back, triggered_by)
+        return FakeTask()
+
+    monkeypatch.setattr(run_weekly_performance_pipeline, "delay", delay)
+    return calls
+
+
+def test_trigger_enqueues_the_task_and_the_worker_job_runs_the_flow_of_data_pipelines(as_manager, incident_engine, monkeypatch, tmp_path):
     monkeypatch.setenv(config.SNAPSHOT_DIR_ENV, str(tmp_path))
     monkeypatch.setattr(transform, "TRANSFORM_VERSION", f"api-{time.time_ns()}")
     monkeypatch.setattr(pipeline.window, "weeks_for_run", lambda week_start=None, weeks_back=2, now=None: [week_start] if week_start else WEEKS)
-    monkeypatch.setattr(pipeline, "_in_background", lambda work: work())  # run the flow before answering, so the test can read the result
+    calls = enqueue_stub(monkeypatch, execute=True)  # the worker's job is done before answering, so the test can read the result
     seed_events(incident_engine)
     response = as_manager.post("/reporting/pipeline-runs", json={"weeks_back": 2})
     assert response.status_code == 202
     run_id = response.json()["run_id"]
+    assert response.json()["task_id"] == FakeTask.id and calls[0][0] == run_id
     latest = as_manager.get("/reporting/pipeline-runs/latest").json()
     assert latest["run_id"] == run_id and latest["status"] == "completed" and latest["trigger"] == "manual"
     assert latest["triggered_by"] and latest["rows_inserted"] == 4 and latest["records_extracted"] == 14
@@ -131,7 +155,7 @@ def test_trigger_starts_the_flow_through_the_function_of_data_pipelines(as_manag
 
 
 def test_trigger_refuses_a_second_run_and_validates_the_week_first(as_manager, incident_engine, monkeypatch):
-    monkeypatch.setattr(pipeline, "_in_background", lambda work: None)  # the run is opened and never finishes
+    enqueue_stub(monkeypatch)  # the run is opened and nobody finishes it
     assert as_manager.post("/reporting/pipeline-runs", json={}).status_code == 202
     assert as_manager.post("/reporting/pipeline-runs", json={}).status_code == 409
     # A request that is wrong in itself is refused as such (422) whether or not a run is in progress.
@@ -143,9 +167,9 @@ def test_trigger_refuses_a_second_run_and_validates_the_week_first(as_manager, i
 
 
 def test_the_response_to_a_trigger_is_immediate_and_names_the_run(as_manager, monkeypatch):
-    monkeypatch.setattr(pipeline, "_in_background", lambda work: None)
+    enqueue_stub(monkeypatch)
     body = as_manager.post("/reporting/pipeline-runs").json()
-    assert set(body) == {"run_id", "status"} and body["status"] == "running"
+    assert set(body) == {"task_id", "run_id", "status"} and body["status"] == "pending"
     assert as_manager.get("/reporting/pipeline-runs/latest").json()["run_id"] == body["run_id"]
 
 
@@ -155,7 +179,7 @@ def test_the_response_to_a_trigger_is_immediate_and_names_the_run(as_manager, mo
 def test_the_endpoints_import_the_pipeline_and_hold_no_etl_logic():
     source = (REPO_ROOT / "services" / "reporting" / "router.py").read_text(encoding="utf-8")
     assert "from data.pipelines import pipeline" in source and "from data.pipelines.weekly_performance import" in source
-    for call in ("pipeline.trigger_weekly_performance_run", "runs.get_latest_run", "queries.get_weekly_performance"):
+    for call in ("pipeline.open_manual_run", "run_weekly_performance_pipeline.delay", "runs.get_latest_run", "queries.get_weekly_performance"):
         assert call in source
     for etl in ("import pandas", "groupby", "insert(", "update(", "delete(", "select(", "telemetry_events"):
         assert etl not in source, etl

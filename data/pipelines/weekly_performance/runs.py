@@ -64,7 +64,13 @@ def open_run(
                 )
             )
             if run_id is not None:
-                connection.execute(update(table).where(table.c.run_id == run_id).values(prefect_flow_run_id=prefect_flow_run_id))
+                # A retry by the worker adopts the same run: if the previous attempt left it `failed`, it is running again.
+                connection.execute(
+                    update(table).where(table.c.run_id == run_id).values(
+                        status="running", started_at=now, finished_at=None, error_stage=None, error_type=None, error_message=None,
+                        prefect_flow_run_id=prefect_flow_run_id,
+                    )
+                )
                 return run_id
             new_id = uuid.uuid4()
             connection.execute(
@@ -127,3 +133,15 @@ def get_latest_run(engine: Engine, pipeline_name: str = PIPELINE_NAME) -> dict[s
     for name in ("started_at", "finished_at", "source_max_timestamp", "window_start", "window_end"):
         record[name] = _iso(record[name])
     return record
+
+
+def fail_run_if_running(engine: Engine, run_id: uuid.UUID, error: BaseException) -> None:
+    """Marks a run `failed` if it is still `running`, so a task that died before the flow closed it leaves no zombie."""
+    error_type, error_message = sanitize_error(error)
+    ensure_reporting(engine)
+    with engine.begin() as connection:
+        connection.execute(
+            update(pipeline_runs)
+            .where(pipeline_runs.c.run_id == run_id, pipeline_runs.c.status == "running")
+            .values(status="failed", finished_at=_now(), error_type=error_type, error_message=error_message)
+        )

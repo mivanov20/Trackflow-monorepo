@@ -15,6 +15,7 @@ from .routers.incidents import router as incidents_router
 from .routers.inventory import router as inventory_router
 from .routers.profiles import router as profiles_router
 from .reporting.router import router as reporting_router
+from .routers.tasks import router as tasks_router
 from .routers.telemetry import router as telemetry_router, validate_telemetry_config
 from .routers.users import router as users_router
 from .mailer import validate_email_config
@@ -91,6 +92,7 @@ app.include_router(incidents_router)
 app.include_router(incident_analysis_router)
 app.include_router(telemetry_router)
 app.include_router(reporting_router)
+app.include_router(tasks_router)
 
 
 @app.get("/health", tags=["health"])
