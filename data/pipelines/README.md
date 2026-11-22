@@ -8,3 +8,7 @@ Each subfolder or file under `data/pipelines/` should represent **one pipeline o
 - **Recommendation**: document pipelines as you add them—their goal, data sources and sinks, dependencies, and how to run them in development, testing, and production.
 
 > _Spanish version: [README.es.md](./README.es.md)._
+
+## Pipelines
+
+- **Weekly Warehouse & Client Performance** (business KPIs per warehouse and client, from `telemetry_events` into `reporting.weekly_warehouse_client_performance`): design in [PIPELINE_DESIGN.md](./PIPELINE_DESIGN.md). Implementation comes next.
