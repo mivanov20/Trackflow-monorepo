@@ -1,0 +1,14 @@
+# Fuera del contexto de construcción de la imagen de interfaces.
+# (En desarrollo el código se monta desde el equipo; la imagen solo necesita los package.json y start.sh.)
+node_modules
+**/node_modules
+.next
+**/.next
+.env*
+**/.env*
+*.log
+**/*.log
+*.tsbuildinfo
+**/*.tsbuildinfo
+.git
+.gitignore
