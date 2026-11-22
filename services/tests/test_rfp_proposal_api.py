@@ -19,6 +19,7 @@ def isolated(monkeypatch, tmp_path):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("RFP_RAW_DIR", str(tmp_path / "raw-rfp"))
     monkeypatch.delenv("RFP_AUTO_DRAFT", raising=False)
+    monkeypatch.setenv("RFP_AUTO_APPROVAL", "false")  # these tests are about the drafting; test_rfp_approval_api.py covers the approvals that follow it
     monkeypatch.delenv("RFP_MAX_DRAFT_ITERATIONS", raising=False)
 
 

@@ -13,7 +13,7 @@ from pathlib import Path
 
 from sqlmodel import Session
 
-from . import store
+from . import store, trace
 from .config import ROOT
 from .convert import ConversionError
 from .graph import WORKER_NODES, compile_graph
@@ -31,6 +31,39 @@ NEXT_LABEL = {
     "discard": "Discarding",
     "synthesize": "Writing the summary",
 }
+
+
+AGENTS = {
+    "convert": "converter",
+    "classify": "classifier",
+    "discard": "classifier",
+    "analyze": "metadata-extractor",
+    "orchestrate": "orchestrator",
+    "warehouse_worker": "worker:warehouse",
+    "lastmile_worker": "worker:lastmile",
+    "reverse_worker": "worker:reverse",
+    "synthesize": "synthesizer",
+}
+
+
+def _trace_input(node: str, state: dict, pdf_path: str) -> dict:
+    """What the node worked on, in a few words (the state BEFORE its own output is merged)."""
+    if node == "convert":
+        return {"pdf": pdf_path}
+    if node in ("classify", "analyze"):
+        return {"markdown_chars": len(state.get("markdown", ""))}
+    if node == "discard":
+        return {"classification": state.get("classification", {}).get("document_type")}
+    if node == "orchestrate":
+        meta = state.get("metadata", {})
+        return {"services_requested": meta.get("services_requested"), "departments_needed": meta.get("departments_needed")}
+    if node.endswith("_worker"):
+        department_id = node.removesuffix("_worker")
+        task = next((task for task in state.get("subtasks", []) if task["department_id"] == department_id), {})
+        return {"department": department_id, "extract_blocks": len(task.get("extracts", [])), "shared": task.get("shared")}
+    if node == "synthesize":
+        return {"sections": [section["department_id"] for section in state.get("sections", [])]}
+    return {}
 
 
 @lru_cache(maxsize=1)
@@ -57,6 +90,8 @@ def run_intake(ticket_id: str, engine) -> str:
         for update in graph().stream(initial, stream_mode="updates"):
             for node, output in update.items():
                 output = output or {}
+                step = (output.get("steps") or [{}])[0]
+                trace.record(engine, ticket_id, 1, AGENTS.get(node, node), node, _trace_input(node, state, initial["pdf_path"]), {"detail": step.get("detail"), "engine": step.get("engine")}, department_id=node.removesuffix("_worker") if node.endswith("_worker") else None)
                 for key, value in output.items():
                     if key in ("steps", "sections"):
                         state[key] = [*state.get(key, []), *value]

@@ -74,6 +74,7 @@ def sla_paragraph(brief: dict, facts: Facts, concise: bool) -> list[str]:
 def open_items(brief: dict, owner: str, extra: list[str]) -> list[str]:
     items = list(brief["key_aspects"].get("open_questions", []))
     items.extend(extra)
+    items.extend(f"Requested by the owner at the approval step: {request}" for request in brief.get("reviewer_requests", []))
     return list(dict.fromkeys(items))
 
 
@@ -88,12 +89,14 @@ def header(brief: dict, title: str) -> list[str]:
 
 
 def scope_line(brief: dict, subject: str) -> str:
-    volume = brief["monthly_volume"]
+    volume = brief.get("rfp_monthly_volume", brief["monthly_volume"])  # what the CLIENT said, even when the arbiter capped the volume this proposal is quoted for
     deadline = brief.get("deadline")
     text = f"{brief['key_aspects']['summary'].rstrip('.')}."
     text += f" The client expects about {count(volume)} orders per month." if volume else " The RFP does not state the monthly order volume, so the figures below that depend on it are to be confirmed."
     if deadline:
         text += f" Date given by the client: {deadline}."
+    for note in brief.get("arbitration_notes", []):  # a decision of the fixed arbiter (Part 3) that changes what this section may say
+        text += f" {note}"
     return text
 
 
@@ -142,7 +145,7 @@ def draft_lastmile(brief: dict, facts: Facts, concise: bool) -> Draft:
     destination = figures.get("destinations")
     if facts.carriers:
         place = "the United States (Los Angeles)" if client["country"] == "US" else "Spain (Zaragoza)"
-        lines.append(f"For {destination or place}, TrackFlow can use: " + ", ".join(facts.carriers) + (" and two local last-mile carriers in the Zaragoza metropolitan area." if client["country"] == "ES" else "."))
+        lines.append(f"For {'delivery ' + destination if destination else place}, TrackFlow can use: " + ", ".join(facts.carriers) + (" and two local last-mile carriers in the Zaragoza metropolitan area." if client["country"] == "ES" else "."))
         for name in facts.carriers:
             note = facts.carrier_notes.get(name)
             foreign = r"Aragón|Zaragoza" if client["country"] == "US" else r"Los Angeles|California"
@@ -216,6 +219,9 @@ SYSTEM = (
 
 def generate(brief: dict, facts: Facts, feedback: dict | None = None, previous: str | None = None) -> Draft:
     """One draft. `feedback` is the evaluators' structured feedback of the previous attempt (`{"text": ..., "fixes": [...]}`); a readability fix makes the rules draft concise."""
+    human = [fix["instruction"] for fix in (feedback or {}).get("fixes", []) if fix.get("kind") == "human"]
+    if human:  # the department owner asked for changes at the approval step: the rules draft lists the requests among its open items, a model draft receives them as feedback
+        brief = {**brief, "reviewer_requests": human}
     department_id = brief["department_id"]
     concise = bool(feedback) and any(fix.get("kind") == "readability" for fix in feedback.get("fixes", []))
     spec = DEPARTMENTS[department_id]

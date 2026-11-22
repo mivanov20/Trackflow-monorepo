@@ -473,3 +473,14 @@ td .status + .small-button { margin-left: 10px; }
 .rfp-draft-pending { background: #f1f1ef; color: #7d7d78; }
 .rfp-needs-review { border-color: #e2c08a; }
 .rfp-draft { margin: 8px 0 0; padding: 10px 12px; background: #f7f9f7; border: 1px solid #e3e9e4; border-radius: 4px; font: 12px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow: auto; }
+
+.rfp-status-waiting_for_approval { background: #fbf2e7; color: #a36a21; }
+.rfp-status-done { background: #edf5ea; color: #4e7a43; }
+.rfp-approval { display: grid; gap: 6px; margin: 8px 0; padding: 10px 12px; border: 1px dashed #c9d6cc; border-radius: 6px; background: #fbfdfb; }
+.rfp-approval label { font-size: 12px; }
+.rfp-approval textarea, .rfp-approval input[type=text], .rfp-approval input[inputmode] { width: 100%; box-sizing: border-box; font: 12px var(--mono); padding: 6px 8px; border: 1px solid #d5ded6; border-radius: 4px; }
+.rfp-choice { display: inline-flex; align-items: center; gap: 4px; margin-right: 12px; }
+.rfp-final { margin: 12px 0; padding: 12px 14px; border: 1px solid #bbd6b4; border-radius: 6px; background: #f6fbf4; }
+.rfp-trace { margin: 12px 0; }
+.rfp-trace summary { cursor: pointer; font-weight: 700; font-size: 13px; }
+.rfp-trace-output { font: 11px var(--mono); max-width: 360px; word-break: break-all; }

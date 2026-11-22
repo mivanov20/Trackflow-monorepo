@@ -8,6 +8,7 @@ from pathlib import Path
 os.environ.setdefault("DATABASE_URL", "sqlite://")
 os.environ.setdefault("JWT_SECRET", "test-only-secret-with-at-least-32-characters")
 os.environ.setdefault("BCRYPT_ROUNDS", "4")  # tests: bcrypt rápido
+os.environ.setdefault("RFP_CHECKPOINT_DB", ":memory:")  # the approval checkpoints of the tests never touch a file
 
 # Make the repo-level scripts/ folder importable (seed_incidents lives there).
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
