@@ -1,5 +1,7 @@
 # Support agent with LangGraph (part 1)
 
+> **Part 1 as built.** Part 2 extended this graph with a planner node, two live tool nodes and two more end nodes, and the state grew to six fields; see [agent-tools-and-routing.md](agent-tools-and-routing.md).
+
 The RAG pipeline of milestone 7 (`retrieve`, `generate_answer`, `query`) now runs as an explicit graph: state, nodes, conditional edges, a compile step, a checkpoint after every node and a trace of every run. The RAG logic is **reused, not rewritten**: the nodes call `data.pipelines.rag.retrieve` and `data.pipelines.rag.generate_answer`.
 
 ```
@@ -73,3 +75,5 @@ The existing RAG tests (`tests/pipelines/test_rag.py`) are untouched and must st
 
 - The live grounding evals (item 5) have not been run in this repository's tests because no real model was available; item 4 proves the wiring, not the model.
 - The trace is stored in the application database and is as durable as it; there is no retention policy yet.
+
+Part 2 (live tools for tickets and stock, and the routing between them and the RAG) is in [agent-tools-and-routing.md](agent-tools-and-routing.md).

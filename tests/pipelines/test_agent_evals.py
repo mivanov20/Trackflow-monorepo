@@ -24,7 +24,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from qdrant_client import QdrantClient
 from sqlalchemy.pool import StaticPool
-from sqlmodel import SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine
 
 from data.pipelines import rag
 from data.process import knowledge_base, model_client
@@ -91,10 +91,10 @@ def test_eval_1_retrieve_runs_before_generate_and_hands_it_its_context(monkeypat
     pipeline = Pipeline(monkeypatch)
     result = runner.run_agent("What's the standard return window?", graph=agent, engine=engine, run_id="eval-1")
     steps = runner.run_trace("eval-1", engine=engine)
-    assert nodes_of(steps) == ["receive_question", "retrieve_context", "generate"]  # the order
+    assert nodes_of(steps) == ["receive_question", "plan_sources", "retrieve_context", "generate"]  # the order
     assert nodes_of(steps).index("retrieve_context") < nodes_of(steps).index("generate")
     assert nodes_of(steps).count("retrieve_context") == 1 and pipeline.calls == {"retrieve": 1, "generate": 1}  # retrieval ran once
-    retrieved, generate_input = steps[1]["output"]["context"], steps[2]["input"]["context"]
+    retrieved, generate_input = steps[2]["output"]["context"], steps[3]["input"]["context"]
     assert retrieved == generate_input  # the generation step got exactly what retrieval produced
     assert result.outcome == "generated" and all(s["status"] == "ok" for s in steps)
 
@@ -113,9 +113,9 @@ def test_eval_3_nothing_above_the_threshold_routes_to_an_honest_answer_without_t
     pipeline = Pipeline(monkeypatch, context=[])
     result = runner.run_agent("What is the weather in Zaragoza?", graph=agent, engine=engine, run_id="eval-3")
     steps = runner.run_trace("eval-3", engine=engine)
-    assert nodes_of(steps) == ["receive_question", "retrieve_context", "no_information"]
+    assert nodes_of(steps) == ["receive_question", "plan_sources", "retrieve_context", "no_information"]
     assert "generate" not in nodes_of(steps) and pipeline.calls["generate"] == 0  # no model call on empty context
-    assert steps[1]["output"]["context"] == []
+    assert steps[2]["output"]["context"] == []
     assert result.outcome == "no_context" and "don't have information" in result.answer
 
 
@@ -140,7 +140,7 @@ def test_eval_4_the_answer_stays_grounded_in_the_knowledge_base_of_the_context(m
     monkeypatch.setenv("LLM_MODEL", "chat-model")
     result = runner.run_agent("What's the standard return window? How many days after delivery?", graph=agent, engine=engine, run_id="eval-4")
     steps = runner.run_trace("eval-4", engine=engine)
-    retrieved = [(c["source_document"], c["chunk_index"]) for c in steps[1]["output"]["context"]]
+    retrieved = [(c["source_document"], c["chunk_index"]) for c in steps[2]["output"]["context"]]
     assert ("returns-policy", 1) in retrieved  # the chunk that holds the fact was retrieved and traced
     assert "returns-policy" in prompts[0] and "30 days from delivery" in prompts[0]  # ... and given to the generation step
     assert "30 days" in result.answer and result.outcome == "generated"
@@ -160,7 +160,7 @@ def test_eval_4_the_answer_stays_grounded_in_the_knowledge_base_of_the_context(m
 def test_eval_5_live_grounding_against_the_real_models(agent, engine, question, must_contain, must_not_contain):
     result = runner.run_agent(question, graph=agent, engine=engine)
     steps = runner.run_trace(result.run_id, engine=engine)
-    assert nodes_of(steps)[:2] == ["receive_question", "retrieve_context"]
+    assert nodes_of(steps)[:3] == ["receive_question", "plan_sources", "retrieve_context"]
     answer = result.answer.lower()
     assert all(text.lower() in answer for text in must_contain), result.answer
     assert not any(text.lower() in answer for text in must_not_contain), result.answer
@@ -172,18 +172,19 @@ def test_eval_6_a_failure_is_in_the_trace_and_the_run_resumes_from_its_checkpoin
     with pytest.raises(model_client.ModelServiceError):
         runner.run_agent("What's the standard return window?", graph=agent, engine=engine, run_id="eval-6")
     steps = runner.run_trace("eval-6", engine=engine)
-    assert nodes_of(steps) == ["receive_question", "retrieve_context", "generate"]
-    assert [s["status"] for s in steps] == ["ok", "ok", "error"] and "ModelServiceError" in steps[2]["error"]
+    assert nodes_of(steps) == ["receive_question", "plan_sources", "retrieve_context", "generate"]
+    assert [s["status"] for s in steps] == ["ok", "ok", "ok", "error"] and "ModelServiceError" in steps[3]["error"]
     resumed = runner.resume("eval-6", graph=agent, engine=engine)
     steps = runner.run_trace("eval-6", engine=engine)
-    assert nodes_of(steps) == ["receive_question", "retrieve_context", "generate", "generate"]  # only generation ran again
+    assert nodes_of(steps) == ["receive_question", "plan_sources", "retrieve_context", "generate", "generate"]  # only generation ran again
     assert pipeline.calls == {"retrieve": 1, "generate": 2}  # retrieval did NOT run again
     assert resumed.outcome == "generated" and steps[-1]["status"] == "ok"
 
 
 # ================================================================== the state is minimal and explicit
-def test_the_state_is_four_explicit_fields_and_carries_no_history():
-    assert set(AgentState.__annotations__) == {"question", "context", "answer", "outcome"}
+def test_the_state_is_six_explicit_fields_and_carries_no_history():
+    # part 1 had four; part 2 adds `plan` (what the planner decided) and `live_data` (what the tools returned): each one is read by a later node
+    assert set(AgentState.__annotations__) == {"question", "plan", "live_data", "context", "answer", "outcome"}
     assert not {"messages", "history", "conversation"} & set(AgentState.__annotations__)
 
 
@@ -191,15 +192,16 @@ def test_each_node_has_one_responsibility_and_works_alone():
     assert agent_graph.receive_question({"question": "  hi  "}) == {"question": "hi"}
     assert agent_graph.reject_empty({})["outcome"] == "empty_question"
     assert agent_graph.no_information({})["outcome"] == "no_context" and "don't have information" in agent_graph.no_information({})["answer"]
-    assert agent_graph.after_receive({"question": ""}) == "empty" and agent_graph.after_receive({"question": "q"}) == "retrieve"
-    assert agent_graph.after_retrieve({"context": []}) == "nothing_found" and agent_graph.after_retrieve({"context": [GENERATE_CHUNK]}) == "context"
+    assert agent_graph.after_receive({"question": ""}) == "empty" and agent_graph.after_receive({"question": "q"}) == "plan"
+    rag_only = {"plan": {"steps": ["rag"]}}
+    assert agent_graph.after_retrieve({**rag_only, "context": []}) == "no_information" and agent_graph.after_retrieve({**rag_only, "context": [GENERATE_CHUNK]}) == "generate"
 
 
 # ================================================================== edges depend on what the nodes produced
 def test_the_edges_after_receive_and_after_retrieve_are_conditional(agent):
     edges = agent.get_graph().edges
     conditional = {(e.source, e.target) for e in edges if e.conditional}
-    assert {("receive_question", "reject_empty"), ("receive_question", "retrieve_context"), ("retrieve_context", "generate"), ("retrieve_context", "no_information")} <= conditional
+    assert {("receive_question", "reject_empty"), ("receive_question", "plan_sources"), ("plan_sources", "lookup_ticket"), ("plan_sources", "retrieve_context"), ("plan_sources", "ask_clarification"), ("lookup_ticket", "retrieve_context"), ("lookup_ticket", "answer_unavailable"), ("retrieve_context", "generate"), ("retrieve_context", "no_information")} <= conditional
     assert not any(e.source == "receive_question" and not e.conditional for e in edges)  # no fixed straight line out of receive
 
 
@@ -289,8 +291,8 @@ def test_a_checkpoint_is_saved_after_every_node(monkeypatch, agent, engine):
     Pipeline(monkeypatch)
     runner.run_agent("What's the standard return window?", graph=agent, engine=engine, run_id="cp-1")
     saved = runner.checkpoints("cp-1", graph=agent)
-    assert [c["next"] for c in saved] == [["__start__"], ["receive_question"], ["retrieve_context"], ["generate"], []]
-    assert "context" in saved[3]["state_keys"] and "answer" in saved[-1]["state_keys"]
+    assert [c["next"] for c in saved] == [["__start__"], ["receive_question"], ["plan_sources"], ["retrieve_context"], ["generate"], []]
+    assert "plan" in saved[3]["state_keys"] and "context" in saved[4]["state_keys"] and "answer" in saved[-1]["state_keys"]
 
 
 def test_checkpoints_persist_in_a_sqlite_file_and_survive_a_restart(monkeypatch, engine, tmp_path):
@@ -309,11 +311,12 @@ def test_the_trace_is_stored_and_can_be_read_after_the_run_with_inputs_and_outpu
     Pipeline(monkeypatch)
     runner.run_agent("What's the standard return window?", graph=agent, engine=engine, run_id="tr-1")
     steps = read_trace(engine, "tr-1")  # a fresh read from the database: nothing is kept in memory
-    assert [s["step"] for s in steps] == [1, 2, 3] and all(s["duration_ms"] >= 0 and s["started_at"] for s in steps)
+    assert [s["step"] for s in steps] == [1, 2, 3, 4] and all(s["duration_ms"] >= 0 and s["started_at"] for s in steps)
     assert steps[0]["input"]["question"] == "What's the standard return window?" and steps[0]["output"] == {"question": "What's the standard return window?"}
-    assert steps[1]["output"]["context"][0] == {"source_document": "returns-policy", "section": "Returns Policy > Standard return window", "chunk_index": 1, "score": 0.91}
-    assert steps[2]["output"]["outcome"] == "generated" and "30 days" in steps[2]["output"]["answer"]
-    assert "Standard return window: 30 days" not in str(steps[1])  # chunk text stays out of the trace
+    assert steps[1]["output"]["plan"]["steps"] == ["rag"] and steps[1]["output"]["plan"]["reason"]  # the plan, and why, are in the trace
+    assert steps[2]["output"]["context"][0] == {"source_document": "returns-policy", "section": "Returns Policy > Standard return window", "chunk_index": 1, "score": 0.91}
+    assert steps[3]["output"]["outcome"] == "generated" and "30 days" in steps[3]["output"]["answer"]
+    assert "Standard return window: 30 days" not in str(steps[2])  # chunk text stays out of the trace
     assert read_trace(engine, "another-run") == []
 
 
@@ -341,3 +344,156 @@ def test_the_generation_node_passes_the_context_of_the_retrieve_node_unchanged(m
     pipeline = Pipeline(monkeypatch)
     runner.run_agent("What's the standard return window?", graph=agent, engine=engine)
     assert pipeline.generated_with == ("What's the standard return window?", [GENERATE_CHUNK])
+
+
+# ================================================================== PART 2: routing between the RAG and the live tools (criteria on the trace)
+@pytest.fixture
+def services(engine, monkeypatch):
+    """The real incident and inventory tables (in memory) that the tools read; the trace is stored in the same database."""
+    from typing import get_args
+
+    from services import database
+    from services.models import SKU, Incident, StockEntry
+    from services.schemas import Category
+
+    monkeypatch.setattr(database, "engine", engine)
+    with Session(engine) as session:
+        session.add(Incident(id=482, title="Parcel damaged in transit", description="The customer reports a crushed box.", category="delivery_failure", status="in_progress", origin="customer", branch="central"))
+        hoodie = SKU(name="Blue Hoodie", sku="HOOD-BLU-M", client_name="Fashion Co", category=get_args(Category)[0], warehouse="ZGZ")
+        session.add(hoodie)
+        session.commit()
+        session.add(StockEntry(sku_id=hoodie.id, quantity=42, reference="PO-1", warehouse="ZGZ", user_uid="u1"))
+        session.commit()
+    return engine
+
+
+def tools_must_not_run(monkeypatch):
+    from services.agent import tools
+
+    monkeypatch.setattr(tools, "lookup_ticket", lambda *a, **k: pytest.fail("a policy question must not call a tool"))
+    monkeypatch.setattr(tools, "lookup_stock", lambda *a, **k: pytest.fail("a policy question must not call a tool"))
+
+
+def test_eval_7_a_live_ticket_question_is_resolved_with_the_tool_and_not_the_rag(monkeypatch, agent, services):
+    pipeline = Pipeline(monkeypatch)
+    result = runner.run_agent("What's the status of ticket 482?", graph=agent, engine=services, run_id="eval-7")
+    steps = runner.run_trace("eval-7", engine=services)
+    assert nodes_of(steps) == ["receive_question", "plan_sources", "lookup_ticket", "generate"]
+    assert "retrieve_context" not in nodes_of(steps) and pipeline.calls["retrieve"] == 0  # the RAG was never consulted
+    assert steps[1]["output"]["plan"]["steps"] == ["ticket"] and steps[1]["output"]["plan"]["ticket_id"] == 482
+    lookup = steps[2]["output"]["live_data"][0]
+    assert lookup["tool"] == "ticket_lookup" and lookup["status"] == "ok" and lookup["summary"]["status"] == "in_progress"
+    live_block = pipeline.generated_with[1][0]  # what the generation step was given: the live record, with its own source
+    assert live_block["source_document"] == "incident-manager" and "status in_progress" in live_block["text"]
+    assert result.sources == ("tool:ticket_lookup",) and result.outcome == "generated"
+
+
+def test_eval_8_a_policy_question_is_resolved_with_the_rag_and_not_a_tool(monkeypatch, agent, services):
+    pipeline = Pipeline(monkeypatch)
+    tools_must_not_run(monkeypatch)
+    result = runner.run_agent("What's the standard return window?", graph=agent, engine=services, run_id="eval-8")
+    steps = runner.run_trace("eval-8", engine=services)
+    assert nodes_of(steps) == ["receive_question", "plan_sources", "retrieve_context", "generate"]
+    assert not {"lookup_ticket", "lookup_stock"} & set(nodes_of(steps))  # no tool ran
+    assert steps[1]["output"]["plan"]["steps"] == ["rag"] and pipeline.calls["retrieve"] == 1
+    assert result.sources == ("rag",)
+
+
+def test_eval_9_a_question_that_needs_both_uses_the_tool_first_and_then_the_rag(monkeypatch, agent, services):
+    pipeline = Pipeline(monkeypatch)
+    result = runner.run_agent("Ticket 482 is about a damaged parcel, who pays the return shipping?", graph=agent, engine=services, run_id="eval-9")
+    steps = runner.run_trace("eval-9", engine=services)
+    assert nodes_of(steps) == ["receive_question", "plan_sources", "lookup_ticket", "retrieve_context", "generate"]  # the order is in the trace
+    assert result.sources == ("tool:ticket_lookup", "rag")
+    blocks = pipeline.generated_with[1]
+    assert [b["source_document"] for b in blocks] == ["incident-manager", "returns-policy"]  # the live record and the policy, given together
+
+
+def test_eval_10_when_the_incident_service_fails_the_agent_says_it_could_not_confirm_and_makes_nothing_up(monkeypatch, agent, services):
+    from services.agent import tools
+
+    pipeline = Pipeline(monkeypatch)
+    monkeypatch.setattr(tools, "_read_ticket", lambda ticket_id: (_ for _ in ()).throw(ConnectionError("incident manager down")))
+    result = runner.run_agent("What's the status of ticket 482?", graph=agent, engine=services, run_id="eval-10")
+    steps = runner.run_trace("eval-10", engine=services)
+    assert nodes_of(steps) == ["receive_question", "plan_sources", "lookup_ticket", "answer_unavailable"]  # the recovery path, not a crash
+    assert steps[2]["status"] == "ok" and steps[2]["output"]["live_data"][0]["status"] == "unavailable"  # the failure is data, the run goes on
+    assert "couldn't confirm ticket 482's status right now" in result.answer and result.outcome == "tool_unavailable"
+    assert pipeline.calls == {"retrieve": 0, "generate": 0}  # no model was asked to answer from nothing
+    assert not any(status in result.answer for status in ("in_progress", "resolved", "open", "discarded"))  # no status invented
+
+
+def test_eval_11_a_timeout_and_a_missing_ticket_take_the_same_honest_path(monkeypatch, agent, services):
+    from services.agent import tools
+
+    Pipeline(monkeypatch)
+    monkeypatch.setattr(tools, "_read_ticket", lambda ticket_id: (_ for _ in ()).throw(tools.ToolTimeout("no answer within 4 seconds")))
+    timeout = runner.run_agent("What's the status of ticket 482?", graph=agent, engine=services, run_id="eval-11a")
+    assert runner.run_trace("eval-11a", engine=services)[2]["output"]["live_data"][0]["status"] == "timeout" and "couldn't confirm" in timeout.answer
+    monkeypatch.undo()
+    Pipeline(monkeypatch)
+    from services import database
+
+    monkeypatch.setattr(database, "engine", services)
+    missing = runner.run_agent("What's the status of ticket 99999?", graph=agent, engine=services, run_id="eval-11b")
+    steps = runner.run_trace("eval-11b", engine=services)
+    assert nodes_of(steps)[-1] == "answer_unavailable" and steps[2]["output"]["live_data"][0]["status"] == "not_found"
+    assert "couldn't find a ticket 99999" in missing.answer and missing.outcome == "tool_unavailable"
+
+
+def test_eval_12_if_the_tool_fails_but_the_question_also_needs_the_rag_the_rag_part_is_still_answered(monkeypatch, agent, services):
+    from services.agent import tools
+
+    pipeline = Pipeline(monkeypatch)
+    monkeypatch.setattr(tools, "_read_ticket", lambda ticket_id: (_ for _ in ()).throw(ConnectionError("down")))
+    result = runner.run_agent("Ticket 482 is about a damaged parcel, who pays the return shipping?", graph=agent, engine=services, run_id="eval-12")
+    steps = runner.run_trace("eval-12", engine=services)
+    assert nodes_of(steps) == ["receive_question", "plan_sources", "lookup_ticket", "retrieve_context", "generate"]
+    failure_block, policy_block = pipeline.generated_with[1]
+    assert "UNKNOWN" in failure_block["text"] and "could not be completed" in failure_block["text"] and "in_progress" not in failure_block["text"]
+    assert policy_block["source_document"] == "returns-policy" and result.outcome == "generated"
+
+
+def test_eval_13_a_ticket_question_without_a_number_asks_for_it_and_reads_nothing(monkeypatch, agent, services):
+    pipeline = Pipeline(monkeypatch)
+    tools_must_not_run(monkeypatch)
+    result = runner.run_agent("Any update on my ticket?", graph=agent, engine=services, run_id="eval-13")
+    steps = runner.run_trace("eval-13", engine=services)
+    assert nodes_of(steps) == ["receive_question", "plan_sources", "ask_clarification"]
+    assert pipeline.calls == {"retrieve": 0, "generate": 0} and result.outcome == "needs_ticket_id" and "ticket number" in result.answer
+    assert result.sources == ()
+
+
+def test_eval_14_a_stock_question_is_resolved_with_the_inventory_tool(monkeypatch, agent, services):
+    pipeline = Pipeline(monkeypatch)
+    result = runner.run_agent("Do we have stock of Blue Hoodie?", graph=agent, engine=services, run_id="eval-14")
+    steps = runner.run_trace("eval-14", engine=services)
+    assert nodes_of(steps) == ["receive_question", "plan_sources", "lookup_stock", "generate"] and pipeline.calls["retrieve"] == 0
+    assert steps[2]["output"]["live_data"][0]["summary"] == {"matches": [{"sku": "HOOD-BLU-M", "warehouse": "ZGZ", "current_stock": 42}]}
+    block = pipeline.generated_with[1][0]
+    assert block["source_document"] == "inventory-manager" and "42 units in stock" in block["text"]
+    assert result.sources == ("tool:stock_lookup",)
+
+
+def test_the_trace_tells_which_sources_were_used_and_in_what_order(monkeypatch, agent, services):
+    from services.agent.trace import sources_used
+
+    Pipeline(monkeypatch)
+    expected = {
+        "What's the status of ticket 482?": ["tool:ticket_lookup"],
+        "What's the standard return window?": ["rag"],
+        "Ticket 482 is about a damaged parcel, who pays the return shipping?": ["tool:ticket_lookup", "rag"],
+        "stock of Blue Hoodie and what's the storage price?": ["tool:stock_lookup", "rag"],
+    }
+    for question, sources in expected.items():
+        result = runner.run_agent(question, graph=agent, engine=services)
+        assert sources_used(runner.run_trace(result.run_id, engine=services)) == sources == list(result.sources)
+    assert sources_used([]) == []
+    assert sources_used([{"node": "receive_question"}, {"node": "retrieve_context"}, {"node": "retrieve_context"}]) == ["rag"]  # each source once
+
+
+def test_the_tool_nodes_call_only_their_own_tool_and_never_the_rag():
+    assert "tools.lookup_ticket" in _calls_in(agent_graph.lookup_ticket) and "rag.retrieve" not in _calls_in(agent_graph.lookup_ticket)
+    assert "tools.lookup_stock" in _calls_in(agent_graph.lookup_stock) and "rag.retrieve" not in _calls_in(agent_graph.lookup_stock)
+    assert "tools.lookup_stock" not in _calls_in(agent_graph.lookup_ticket) and "tools.lookup_ticket" not in _calls_in(agent_graph.lookup_stock)
+    assert "rag.generate_answer" not in _calls_in(agent_graph.lookup_ticket)

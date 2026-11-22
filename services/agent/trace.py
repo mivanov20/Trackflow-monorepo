@@ -26,6 +26,9 @@ def summarize(values: dict[str, Any] | None) -> dict[str, Any]:
     for key, value in (values or {}).items():
         if key == "context":
             summary["context"] = [{"source_document": c.get("source_document"), "section": c.get("section"), "chunk_index": c.get("chunk_index"), "score": round(float(c.get("score", 0.0)), 4)} for c in value]
+        elif key == "live_data":
+            # what each tool was asked, how it ended, and a few fields of the record: never the free text of a ticket
+            summary["live_data"] = [{"tool": r["tool"], "status": r["status"], "input": r["input"], "message": r.get("message", ""), "summary": r.get("summary", {})} for r in value]
         elif key == "question":
             summary["question"] = str(value)[:QUESTION_PREVIEW]
         elif key == "answer":
@@ -74,3 +77,17 @@ def read_trace(engine: Engine, run_id: str) -> list[dict]:
     with Session(engine) as session:
         rows = session.exec(select(AgentTraceStep).where(AgentTraceStep.run_id == run_id).order_by(AgentTraceStep.step)).all()
     return [{"step": r.step, "node": r.node, "status": r.status, "started_at": r.started_at.isoformat(), "duration_ms": r.duration_ms, "input": r.input, "output": r.output, "error": r.error} for r in rows]
+
+
+# the node that reads each source, in the words of someone reading a trace
+SOURCE_OF_NODE = {"lookup_ticket": "tool:ticket_lookup", "lookup_stock": "tool:stock_lookup", "retrieve_context": "rag"}
+
+
+def sources_used(steps: list[dict]) -> list[str]:
+    """Which sources a run consulted and in what order, from its trace: `tool:ticket_lookup`, `tool:stock_lookup`, `rag`."""
+    sources: list[str] = []
+    for step in steps:
+        source = SOURCE_OF_NODE.get(step["node"])
+        if source and source not in sources:
+            sources.append(source)
+    return sources
