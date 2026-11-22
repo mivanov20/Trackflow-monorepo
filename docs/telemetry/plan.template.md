@@ -254,7 +254,7 @@ This section fixes the contract between producers (API, browser) and the collect
 | Authentication | Browser: the user's normal bearer token (events carry the real `userId`; the collector overwrites `userId` with the token's subject, so a client cannot impersonate another user). Before sign-in (failed login, login page views): no token, `userId` is `null`, and the route accepts only the events marked `frontend` that are allowed anonymously (`page_viewed`, `frontend_error_caught`, `network_request_failed`, `page_load_recorded`, `flow_started`, `flow_abandoned`, `form_validation_failed`), with a stricter rate limit. Backend events do not use HTTP: the API writes them directly to the queue in-process. |
 | CORS | Same origin as the backoffice (the existing `/backend` proxy), so no cross-origin allowance is added. |
 | Rate limit | 60 requests per minute per user, 20 per minute per network for anonymous calls. Over the limit: `429` with `Retry-After`; the producer keeps events in its buffer. |
-| Validation | Each event is validated against its schema. The collector replies `202` with `{"accepted": n, "rejected": [{"eventId": "...", "reason": "..."}]}`. A rejected event is never retried (it would fail again); an accepted duplicate `eventId` is dropped silently. |
+| Validation | Each event is validated on its own against its schema (see section 13). The collector replies `200` with `{"received": N, "stored": M, "rejected": R}`; the reasons are logged on the server, never echoed. A rejected event is never retried (it would fail again). |
 | Server-set fields | The collector adds `receivedAt` (arrival time) outside the envelope in storage. It flags any event whose `timestamp` differs from `receivedAt` by more than 5 minutes. |
 | Failures | `5xx` and network errors are retried by the producer; `4xx` other than `429` are not. |
 
@@ -305,14 +305,71 @@ python docs/telemetry/build.py
 python -m pytest packages/shared/tests/test_telemetry_docs.py
 ```
 
-The test validates every example against its schema, checks that the five mandatory metrics are present and exact, that every event has a hypothesis and a decision, and that the committed files are up to date. The build also writes `uis/backoffice/lib/telemetry-schema.generated.ts`, the allowlists the browser checks every event against before queueing it. To add an event: add it to `events.py` with its hypothesis, decision, allowlist, personal-data note, delivery mode and example, run the build, and review the diff.
+The test validates every example against its schema, checks that the five mandatory metrics are present and exact, that every event has a hypothesis and a decision, and that the committed files are up to date. The build also writes `uis/backoffice/lib/telemetry-schema.generated.ts`, the allowlists the browser checks every event against before queueing it, and `services/telemetry_catalogue.py`, the same allowlists plus the storage mapping for the collector. To add an event: add it to `events.py` with its hypothesis, decision, allowlist, personal-data note, delivery mode and example, run the build, and review the diff.
 
 ## 12. Phase 2 implementation status
 
-Phase 2 builds the capture half in the backoffice and a stub receiver in the API. The stub, `POST /telemetry/events`, validates the envelope with the `TelemetryEvent` model, logs the batch, answers `200` with `{"received": N}` and stores nothing. It is open (no authentication) because `sendBeacon` cannot carry an `Authorization` header; the 202 answer, per-event rejection list, authentication and rate limits of section 9.2 arrive with the persistent collector in Phase 3, and the browser needs no change when that happens because it reads the address from `NEXT_PUBLIC_TELEMETRY_ENDPOINT`.
+Phase 2 builds the capture half in the backoffice and a stub receiver in the API. The stub, `POST /telemetry/events`, validates the envelope with the `TelemetryEvent` model, logs the batch, answers `200` with `{"received": N}` and stores nothing. It is open (no authentication) because `sendBeacon` cannot carry an `Authorization` header. Phase 3 (section 13) replaced the stub with the persistent collector without touching the browser, because the browser reads the address from `NEXT_PUBLIC_TELEMETRY_ENDPOINT` and only looks at the HTTP status. Authentication and rate limits remain to be added.
 
 Every event passes through one function, `track(eventType, properties)` in `uis/backoffice/lib/telemetry.ts`. It adds the envelope, validates the event against the generated allowlist (an unknown event, a missing required property or an unknown property drops the event), queues it, and sends batches every 10 seconds or at 20 events, with `sendBeacon` when the tab is hidden and up to three retries with exponential waiting.
 
 Until the backend producer exists, the backoffice also produces the backend-sourced events whose moment it can observe from an API response. When Phase 3 moves a producer to the server, remove that event from the browser, because the two producers would count it twice (each has its own `eventId`).
 
 {{FRONTEND_STATUS}}
+
+## 13. Phase 3: storage in Supabase
+
+The collector at `POST /telemetry/events` validates every event of a batch on its own and stores the valid ones with a single bulk `INSERT`. The browser did not change.
+
+### 13.1 How a batch is handled
+
+1. The body is parsed loosely: `{"events": [...]}` where each item is a raw object. It is deliberately not typed as `list[TelemetryEvent]`, because a typed body would answer `422` for the whole batch when one event is wrong.
+2. Each item is checked inside the handler: it must be an object, pass the `TelemetryEvent` envelope model, name an event of this plan, carry the same major `schemaVersion` as the plan, and have properties inside that event's allowlist (no unknown key, every required key present, every value inside its `enum`, `pattern` and bounds).
+3. Valid events become rows and are inserted together: one statement, one transaction, whatever the batch size.
+4. The answer is `200` with `{"received": N, "stored": M, "rejected": R}`. A request is refused as a whole (`422`) only when the envelope itself is unusable: no `events` array, or more than 100 events. A database failure answers `503`, which the browser retries.
+
+Rejected events are counted and logged server-side as position and reason code only (`unknown_event_type`, `invalid_envelope`, `unknown_property`, `missing_property:<name>`, `invalid_value:<name>`, `unsupported_schema_version`, `not_an_object`), never with the values, which may be personal.
+
+### 13.2 The table
+
+`telemetry_events` is append-only: no code updates or deletes it, and on PostgreSQL a trigger refuses both. Row level security is enabled with no policy, so Supabase's public API cannot read or write it; the API connects with a role that bypasses it.
+
+| Column | Type | Source |
+|---|---|---|
+| `id` | `uuid` primary key, default `gen_random_uuid()` | generated |
+| `timestamp` | `timestamptz` not null | `event.timestamp`, the moment of capture in the browser (UTC) |
+| `service` | `text` not null | `backoffice`: the browser collector is the only producer in this phase. Events written by the API itself will use `api` |
+| `event_type` | `text` not null | `event.event_type` |
+| `level` | `text` not null, default `info`, one of `info`, `warn`, `error` | by event, see 13.3 |
+| `value` | `numeric` | the numeric property named in 13.3, or null |
+| `message` | `text` | the event's description in this plan (static text, no user data) |
+| `tags` | `jsonb` not null, default `{}` | `event.properties` (allowlist keys only) plus the reserved key `_envelope` |
+
+Indexes: `timestamp` (B-tree), `event_type` (B-tree) and `tags` (GIN, for containment searches such as `tags @> '{"warehouse": "zaragoza"}'`). The SQL for Supabase is in `services/sql/telemetry_events.sql`; the API also creates the same table on startup.
+
+### 13.3 Level, value and message per event
+
+{{STORAGE_MAPPING}}
+
+### 13.4 What `tags` holds
+
+`tags` is the event's `properties` object, key for key, so the dimensions the plan requires (`warehouse`, `country`, `client_id`, `product_id`, `product_category`, `quantity` and the rest of each allowlist) are searchable without a join. The envelope fields that analytics needs are kept under one reserved key, `_envelope`: `eventId`, `sessionId`, `userId`, `schemaVersion` and `requestId`. No allowlisted property starts with an underscore, so the two never collide.
+
+```json
+{
+  "warehouse": "los_angeles", "country": "US", "client_id": "fashion-co", "product_id": "FSH-TEE-M",
+  "product_category": "fashion", "order_id": "2210", "exit_type": "dispatch", "quantity": 3, "stock_after": 47,
+  "_envelope": {
+    "eventId": "5b0f2a52-6c1e-4f7e-9d0b-3a1c8e7f4d21", "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
+    "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629", "schemaVersion": "{{SCHEMA_VERSION}}",
+    "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84"
+  }
+}
+```
+
+### 13.5 Known limits
+
+- **No de-duplication yet.** The browser can send an event twice (a batch handed to `sendBeacon` while it was mid-retry). The `eventId` is stored in `tags._envelope`, but enforcing uniqueness would need a fourth index beyond the three the tech lead specified, so analytics should count distinct `tags->'_envelope'->>'eventId'` until it is added.
+- **No authentication or rate limit** on the endpoint (section 9.2).
+- **`service` is a constant** while the browser is the only producer.
+- **`timestamp` is the browser's clock.** A wrong clock misplaces the event; the arrival time is not stored.
