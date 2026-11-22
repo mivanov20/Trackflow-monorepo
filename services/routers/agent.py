@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, status
 from pydantic import BaseModel, Field
 
 from .. import agent
+from ..agent.trace import sources_used
 from ..accounts import User
 from ..auth import get_current_user
 
@@ -32,6 +33,7 @@ class AgentQuestion(BaseModel):
 class AgentAnswer(BaseModel):
     answer: str
     run_id: str
+    sources: list[str] = Field(default_factory=list)  # what the agent used, in order: tool:ticket_lookup, tool:stock_lookup, rag
 
 
 @router.post("/query", response_model=AgentAnswer)
@@ -44,7 +46,7 @@ def ask_agent(body: AgentQuestion, _user: User = Depends(get_current_user)) -> A
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"{UNAVAILABLE} (reference: {run_id})") from None
     if result.outcome == "empty_question":
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=result.answer)
-    return AgentAnswer(answer=result.answer, run_id=result.run_id)
+    return AgentAnswer(answer=result.answer, run_id=result.run_id, sources=list(result.sources))
 
 
 @router.get("/runs/{run_id}/trace")
@@ -55,4 +57,4 @@ def read_run_trace(run_id: str = Path(pattern=UUID_PATTERN), user: User = Depend
     steps = agent.run_trace(run_id)
     if not steps:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No trace found for that run.")
-    return {"run_id": run_id, "steps": steps, "checkpoints": agent.checkpoints(run_id)}
+    return {"run_id": run_id, "sources_used": sources_used(steps), "steps": steps, "checkpoints": agent.checkpoints(run_id)}

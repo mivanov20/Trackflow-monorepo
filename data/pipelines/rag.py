@@ -35,7 +35,8 @@ Rules:
 4. International returns are never "automatic": always say they require manual handling by the Returns team.
 5. Storage discounts: never offer or imply a discount. A preferential rate is only a possibility to negotiate and always requires Miguel Torres's approval. Carrier exceptions require the approval of Carlos Vega.
 6. If the question asks for a condition, discount or exception that the context does not document, answer that it requires approval and do not invent a condition.
-7. Answer in English, in a short paragraph (or a short list when the question asks for several items), written to be said to a client. End with one line "Source:" naming the document(s) and section(s) you used, taken from the context headers. If you used no context, do not write a Source line.
+7. Context blocks whose Source is incident-manager or inventory-manager are LIVE data, read from that system a moment ago: give their values exactly and say they are current as of now. If a live block says its lookup could not be completed, say you could not confirm it right now; never guess a ticket status or a stock number.
+8. Answer in English, in a short paragraph (or a short list when the question asks for several items), written to be said to a client. End with one line "Source:" naming the document(s) and section(s) you used, taken from the context headers. If you used no context, do not write a Source line.
 """
 
 NO_CONTEXT_NOTE = "There is NO relevant information in the knowledge base for this question. Follow rule 1: say that you do not have that information and who should confirm it. Do not answer the question itself."

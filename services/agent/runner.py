@@ -19,7 +19,7 @@ from sqlalchemy import Engine
 
 from .. import database
 from .graph import AgentBuildError, build_graph, compile_graph
-from .trace import TraceRecorder, read_trace
+from .trace import TraceRecorder, read_trace, sources_used
 
 CHECKPOINT_DB_ENV = "AGENT_CHECKPOINT_DB"  # a file path: checkpoints survive restarts. Unset: kept in memory only.
 
@@ -31,7 +31,8 @@ _graph = None
 class AgentResult:
     run_id: str
     answer: str
-    outcome: str  # generated | no_context | empty_question
+    outcome: str  # generated | no_context | empty_question | needs_ticket_id | tool_unavailable
+    sources: tuple[str, ...] = ()  # what the run consulted, in order: tool:ticket_lookup, tool:stock_lookup, rag
 
 
 def make_checkpointer(path: str | None = None):
@@ -62,7 +63,7 @@ def run_agent(question: str, *, graph=None, engine: Engine | None = None, run_id
     """Runs the graph for one question and returns the answer. A node failure propagates (the endpoint turns it into a clear error)."""
     graph, engine, run_id = graph or get_graph(), engine or database.engine, run_id or str(uuid.uuid4())
     final = graph.invoke({"question": question}, _config(run_id, engine))
-    return AgentResult(run_id=run_id, answer=final["answer"], outcome=final["outcome"])
+    return AgentResult(run_id=run_id, answer=final["answer"], outcome=final["outcome"], sources=tuple(sources_used(read_trace(engine, run_id))))
 
 
 def resume(run_id: str, *, graph=None, engine: Engine | None = None) -> AgentResult:
@@ -70,7 +71,7 @@ def resume(run_id: str, *, graph=None, engine: Engine | None = None) -> AgentRes
     graph, engine = graph or get_graph(), engine or database.engine
     done = len(read_trace(engine, run_id))
     final = graph.invoke(None, _config(run_id, engine, first_step=done + 1))
-    return AgentResult(run_id=run_id, answer=final["answer"], outcome=final["outcome"])
+    return AgentResult(run_id=run_id, answer=final["answer"], outcome=final["outcome"], sources=tuple(sources_used(read_trace(engine, run_id))))
 
 
 def checkpoints(run_id: str, *, graph=None) -> list[dict]:
