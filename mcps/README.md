@@ -8,3 +8,8 @@ Each subfolder inside `mcps/` must correspond to **one specific MCP server** (fo
 - **Recommendation**: document the tools and resources exposed by each MCP server.
 
 > _Spanish version: [README.es.md](./README.es.md)._
+
+## Servers in this repository
+
+- [`trackflow_tools`](trackflow_tools/README.md): TrackFlow company tools (tickets of the Incidents Manager, read-only inventory) over Streamable HTTP, protected by OAuth with MCP Auth. Run its tests with `python -m pytest tests/mcps`.
+- [`dev_auth_server`](dev_auth_server/app.py): a minimal OAuth 2.0 / OIDC authorization server for development and tests only, so the whole flow runs without an account with a real provider.

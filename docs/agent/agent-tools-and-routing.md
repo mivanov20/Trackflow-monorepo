@@ -1,6 +1,6 @@
 # Support agent, part 2: live tools and routing
 
-Part 1 ([agent-design.md](agent-design.md)) turned the RAG into a compiled, checkpointed, traced graph. The agent still knew one thing: the knowledge base. Support also runs on data that changes all the time ("what's the status of ticket 482?", "do we have stock of X?"), and that lives in the incident manager and the inventory manager. Those answers are **not** indexed into the vector store: an indexed ticket is stale the moment someone changes its status. The agent now has two tools that read the real services at question time, and it decides by itself when to use them.
+Part 1 ([agent-design.md](agent-design.md)) turned the RAG into a compiled, checkpointed, traced graph. The agent still knew one thing: the knowledge base. Support also runs on data that changes all the time ("what's the status of ticket 482?", "do we have stock of X?"), and that lives in the incident manager and the inventory manager. Those answers are **not** indexed into the vector store: an indexed ticket is stale the moment someone changes its status. The agent now has two tools that read the real services at question time, and it decides by itself when to use them. (Since the MCP milestone the tools reach those services only through the TrackFlow MCP server, see the section at the end; the contracts, timeout and recovery paths below are unchanged.)
 
 ```
  receive_question --empty--> reject_empty ------------------------------------------------------> END
@@ -20,15 +20,15 @@ State grows from four fields to six: `plan` (what the planner decided) and `live
 
 | | `lookup_ticket` | `lookup_stock` (stretch) |
 |---|---|---|
-| Reads | the incident manager | the inventory manager |
+| Reads (through the MCP server) | the incident manager (`get_ticket`) | the inventory manager (`query_inventory`, operation `search`) |
 | Input contract | `TicketLookupInput{ticket_id: int > 0}` | `StockLookupInput{product_query: 2-120 chars}` |
 | Output contract | `ToolResult` whose `data` is the incident API's own `IncidentRead` (id, title, description, category, status, origin, branch, created_at, updated_at) | `ToolResult` whose `data` is a list of the inventory API's own `SKURead` (name, sku, client, category, warehouse, `current_stock`) |
 | Statuses | `ok`, `not_found`, `timeout`, `unavailable` | the same |
 
-- **Real data, in-process.** Both managers live in this package, so the tools read through their service layer: the same models, the same `IncidentRead` schema and the same `sku_read` stock calculation that the endpoints use. There is no parallel dataset. If they become separate services, only the two `_read_*` functions change (to an HTTP call with a token read from the environment).
-- **Auth.** The agent endpoint requires a signed-in user, and the incident and inventory routers require exactly that and nothing more (no per-user filtering), so an in-process read needs no extra credential and none is hardcoded. Stated here so reviewers do not look for a token.
-- **Read-only.** A tool only selects. A test fails if the module contains an `add`, `commit`, `delete`, `execute`, `post`, `put` or `patch` call, checks that the SQL actually sent contains no write, and checks that the tables are unchanged after every call.
-- **Timeout: 4 seconds** (`TOOL_TIMEOUT_SECONDS`, overridable with `AGENT_TOOL_TIMEOUT_SECONDS`). The read runs in a worker thread and the call gives up after the timeout, so a service that does not answer cannot hang the graph (tested with a 2 s read and a 0.2 s timeout: the call returns in under a second).
+- **Real data, through the MCP server.** The tools call the MCP tools `get_ticket` and `query_inventory` of `mcps/trackflow_tools`, which read the real incident and inventory APIs over HTTP. There is no parallel dataset and no in-process database read left in the agent.
+- **Auth.** Every call carries an OAuth access token (client-credentials grant) with only the scopes `tickets:read inventory:read`; credentials come from the environment (`AGENT_MCP_URL`, `AGENT_OAUTH_ISSUER`, `AGENT_OAUTH_CLIENT_ID`, `AGENT_OAUTH_CLIENT_SECRET`).
+- **Read-only.** The tools only call the read tools. A test fails if the agent's code mentions `create_ticket` or `update_ticket_status`, and a test with the real server shows that the agent's own credential is refused those tools (`[INSUFFICIENT_SCOPE]`) and any inventory write (`[INVENTORY_READ_ONLY]`).
+- **Timeout: 4 seconds** (`TOOL_TIMEOUT_SECONDS`, overridable with `AGENT_TOOL_TIMEOUT_SECONDS`). The read runs in a worker thread and the call gives up after the timeout, so a service that does not answer cannot hang the graph (tested with a 2 s read and a 0.2 s timeout: the call returns in under a second). The MCP call itself is bounded by an explicit timeout a quarter of a second shorter, so it is cancelled cleanly first.
 - **A failure is a result, not an exception.** A timeout, any error of the service, or a ticket that does not exist comes back as a `ToolResult` with its status. The text of the exception (which can carry an address or a credential) is not passed on.
 - **One responsibility each.** Two functions, two input contracts, two reads, two graph nodes. A test fails if the ticket tool touches `SKU` or the stock tool touches `Incident`.
 
@@ -79,5 +79,22 @@ python -m pytest tests/pipelines/test_agent_evals.py tests/pipelines/test_agent_
 ## Limits
 
 - The planner is rule-based: it reads English questions about tickets (a number is required) and stock (a product name is extracted from a few phrasings). It is predictable and testable, not a language model.
-- The stock tool matches by substring of the product name, SKU or client, and returns at most 5 products.
+- The stock tool matches by substring of the product name, SKU or client (done by the MCP tool), and returns at most 5 products.
 - The live grounding evals that need real models are still skipped without model settings. The routing evals do not need a model.
+
+---
+
+# The agent as an MCP client
+
+The agent no longer reads the Incidents Manager or the inventory itself. Its two tools call the TrackFlow MCP server (`mcps/trackflow_tools`, documented in its README) as a client, with `langchain-mcp-adapters`, and that server reads the real services. The node that read the incident data in-process was replaced; **the old code is deleted, not kept as a second path**, and tests check that the agent package has no models, service layer or direct HTTP of the managers and that its only door is the MCP client.
+
+```
+ agent (graph) -- lookup_ticket / lookup_stock nodes --> tools.py --> mcp_client.py
+       --OAuth client-credentials token (scopes: tickets:read inventory:read)--> MCP server --> incident / inventory API
+```
+
+- **Routing is unchanged.** The planner, the edges and the recovery paths are the same functions; only what is behind `_read_ticket` and `_read_stock` changed. All the routing evals pass unchanged, and a new integration test (`tests/mcps/test_agent_mcp_integration.py`) runs them against the real chain.
+- **Least privilege.** The agent's OAuth client is registered with `tickets:read inventory:read`. Even if its code called `create_ticket`, the server would answer `[INSUFFICIENT_SCOPE]` (tested).
+- **Failures stay results.** The MCP server down, the OAuth provider refusing the credentials, a missing configuration or a slow server each become an `unavailable` or `timeout` tool result with a code (`MCP_UNAVAILABLE`, `AUTH_FAILED`, `NOT_CONFIGURED`, `MCP_TIMEOUT`), and the run ends with the same honest message as before. With the server down the agent reads nothing: a test checks that no request reaches the incident API by any other road.
+- **Sync graph, async client.** `langchain-mcp-adapters` is async; the graph's nodes are sync and run the call in the worker thread the timeout already used, with `asyncio.run` and an explicit `asyncio.wait_for`.
+- **Settings:** `AGENT_MCP_URL`, `AGENT_OAUTH_ISSUER`, `AGENT_OAUTH_CLIENT_ID`, `AGENT_OAUTH_CLIENT_SECRET`, `AGENT_MCP_SCOPES` (`.env.example`, passed on by `docker-compose.yml`).

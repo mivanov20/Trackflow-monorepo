@@ -3,14 +3,15 @@
 LIVE DATA, NOT KNOWLEDGE. The RAG answers from stable documents. A ticket's status or a product's stock changes all the time, so
 nothing is copied or indexed: every call reads the real service at that moment.
 
-TRANSPORT: in-process, through the service layer of the incident and inventory managers (the same models, the same `IncidentRead` schema
-and the same `sku_read` stock calculation their endpoints use), because they live in this same package. There is no parallel dataset.
-AUTH: the agent endpoint already requires a signed-in user, and the incident and inventory routers only require one as well (no per-user
-filtering), so an in-process read needs no extra credential and none is hardcoded. If the managers become separate services, only
-the two `_read_*` functions change (to an HTTP call with a token read from the environment).
+TRANSPORT: the TrackFlow MCP server (`mcps/trackflow_tools`), as an MCP client (`mcp_client.py`, `langchain-mcp-adapters`). This is the ONLY path from the
+agent to the Incidents Manager and the inventory: the in-process database reads this module used to have are gone, so there are not two ways in. The server in
+turn reads the real services over HTTP, so there is still no parallel dataset.
+AUTH: every call carries an OAuth access token (client-credentials grant) with only the scopes `tickets:read inventory:read`: the agent can read, and the server
+would refuse it any write (`[INSUFFICIENT_SCOPE]`). Credentials come from the environment, none is hardcoded.
 
 RULES, for both tools:
-* read-only: a tool only selects. No insert, update, delete or commit exists in this module (a test enforces it).
+* read-only: the two tools call only the MCP tools `get_ticket` and `query_inventory` (operations `get` / `search`). `create_ticket`, `update_ticket_status` and
+  every inventory write are never called from here (a test enforces it), and the agent's token could not call them anyway.
 * one responsibility each: `lookup_ticket` reads tickets, `lookup_stock` reads stock. They are separate functions and separate graph nodes.
 * an explicit numeric timeout (`TOOL_TIMEOUT_SECONDS`, 4 s): a service that does not answer in time does not hang the graph.
 * a result that is never an exception: `ToolResult.status` is `ok`, `not_found`, `timeout` or `unavailable`, and the graph has a path for
@@ -25,13 +26,9 @@ from concurrent.futures import TimeoutError as FutureTimeout
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
-from sqlalchemy import or_
-from sqlmodel import Session, select
 
-from .. import database
-from ..models import SKU, Incident
-from ..routers.inventory import sku_read
 from ..schemas import IncidentRead, SKURead
+from . import mcp_client
 
 TOOL_TIMEOUT_SECONDS = float(os.getenv("AGENT_TOOL_TIMEOUT_SECONDS", "4"))
 MAX_PRODUCTS = 5
@@ -83,18 +80,24 @@ def call_with_timeout(function, seconds: float = TOOL_TIMEOUT_SECONDS):
         raise ToolTimeout(f"no answer within {seconds:g} seconds") from None
 
 
-# ----------------------------------------------------------------------------- the reads (the only code that touches the services)
+# ----------------------------------------------------------------------------- the reads (the only code that reaches the company systems: through the MCP server)
+MCP_MARGIN_SECONDS = 0.25  # the MCP call gives up a little before the outer timeout, so it is cancelled cleanly
+
+
 def _read_ticket(ticket_id: int) -> dict | None:
-    with Session(database.engine) as session:
-        incident = session.get(Incident, ticket_id)
-        return IncidentRead.model_validate(incident).model_dump(mode="json") if incident else None
+    """The MCP tool `get_ticket`. A ticket that does not exist is `None`; any other failure raises `McpError`."""
+    try:
+        return mcp_client.call_tool("get_ticket", {"ticket_id": ticket_id}, timeout=TOOL_TIMEOUT_SECONDS - MCP_MARGIN_SECONDS)
+    except mcp_client.McpError as error:
+        if error.code == "NOT_FOUND":
+            return None
+        raise
 
 
 def _read_stock(product_query: str) -> list[dict]:
-    with Session(database.engine) as session:
-        statement = select(SKU).where(or_(SKU.name.icontains(product_query, autoescape=True), SKU.sku.icontains(product_query, autoescape=True), SKU.client_name.icontains(product_query, autoescape=True)))
-        products = session.exec(statement.order_by(SKU.name, SKU.warehouse).limit(MAX_PRODUCTS)).all()
-        return [sku_read(session, product).model_dump(mode="json") for product in products]
+    """The MCP tool `query_inventory`, operation `search` (read only). Returns at most MAX_PRODUCTS products."""
+    answer = mcp_client.call_tool("query_inventory", {"operation": "search", "product_query": product_query}, timeout=TOOL_TIMEOUT_SECONDS - MCP_MARGIN_SECONDS)
+    return answer["products"][:MAX_PRODUCTS]
 
 
 # ----------------------------------------------------------------------------- the tools
@@ -106,12 +109,19 @@ def lookup_ticket(ticket_id: int, *, timeout: float = TOOL_TIMEOUT_SECONDS) -> T
         record = call_with_timeout(lambda: _read_ticket(request.ticket_id), timeout)
     except ToolTimeout as error:
         return ToolResult(**base, status="timeout", message=f"The incident manager did not answer ({error}).")
-    except Exception as error:  # noqa: BLE001 - any failure of the service is a result, not a crash
+    except mcp_client.McpError as error:  # the MCP server or its upstream failed: a result with a code, never an exception
+        if error.code == "MCP_TIMEOUT":
+            return ToolResult(**base, status="timeout", message="The incident manager did not answer in time.")
+        return ToolResult(**base, status="unavailable", message=f"The incident manager could not be read ({error.code}).")
+    except Exception as error:  # noqa: BLE001 - any other failure is a result, not a crash
         return ToolResult(**base, status="unavailable", message=f"The incident manager could not be read ({type(error).__name__}).")
     if record is None:
         return ToolResult(**base, status="not_found", message=f"There is no ticket {request.ticket_id} in the incident manager.")
-    ticket = IncidentRead.model_validate(record)
-    summary = {"id": ticket.id, "status": ticket.status, "category": ticket.category, "origin": record["origin"], "branch": ticket.branch, "updated_at": record["updated_at"]}
+    try:
+        ticket = IncidentRead.model_validate(record)
+        summary = {"id": ticket.id, "status": ticket.status, "category": ticket.category, "origin": record["origin"], "branch": ticket.branch, "updated_at": record["updated_at"]}
+    except Exception:  # noqa: BLE001 - the MCP server answered with a record that is not an incident: do not guess from it
+        return ToolResult(**base, status="unavailable", message="The incident manager answered with data in an unexpected shape.")
     return ToolResult(**base, status="ok", data=record, summary=summary)
 
 
@@ -123,11 +133,18 @@ def lookup_stock(product_query: str, *, timeout: float = TOOL_TIMEOUT_SECONDS) -
         records = call_with_timeout(lambda: _read_stock(request.product_query), timeout)
     except ToolTimeout as error:
         return ToolResult(**base, status="timeout", message=f"The inventory manager did not answer ({error}).")
+    except mcp_client.McpError as error:
+        if error.code == "MCP_TIMEOUT":
+            return ToolResult(**base, status="timeout", message="The inventory manager did not answer in time.")
+        return ToolResult(**base, status="unavailable", message=f"The inventory manager could not be read ({error.code}).")
     except Exception as error:  # noqa: BLE001
         return ToolResult(**base, status="unavailable", message=f"The inventory manager could not be read ({type(error).__name__}).")
     if not records:
         return ToolResult(**base, status="not_found", message=f"No product matching '{request.product_query}' in the inventory manager.")
-    products = [SKURead.model_validate(r) for r in records]
+    try:
+        products = [SKURead.model_validate(r) for r in records]
+    except Exception:  # noqa: BLE001
+        return ToolResult(**base, status="unavailable", message="The inventory manager answered with data in an unexpected shape.")
     summary = {"matches": [{"sku": p.sku, "warehouse": p.warehouse, "current_stock": p.current_stock} for p in products]}
     return ToolResult(**base, status="ok", data=records, summary=summary)
 

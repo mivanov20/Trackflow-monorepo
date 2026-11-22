@@ -117,14 +117,19 @@ def test_the_plain_rag_endpoint_still_exists_next_to_the_agent_endpoint():
 
 # ------------------------------------------------------------------ part 2: the tools through the endpoint
 @pytest.fixture
-def ticket(incident_engine):
-    from sqlmodel import Session
+def ticket(monkeypatch):
+    """The Incidents Manager as the agent reaches it: through the MCP server (faked here; tests/mcps runs the real chain)."""
+    from services.agent import mcp_client
 
-    from services.models import Incident
+    record = {"id": 482, "title": "Parcel damaged in transit", "description": "Crushed box.", "category": "delivery_failure", "status": "in_progress", "origin": "customer", "branch": "central", "created_at": "2026-11-20T09:00:00Z", "updated_at": "2026-11-21T10:30:00Z"}
 
-    with Session(incident_engine) as session:
-        session.add(Incident(id=482, title="Parcel damaged in transit", description="Crushed box.", category="delivery_failure", status="in_progress", origin="customer", branch="central"))
-        session.commit()
+    def call_tool(name, arguments, **kwargs):
+        assert name == "get_ticket", f"the agent must not call {name}"
+        if arguments["ticket_id"] == 482:
+            return dict(record)
+        raise mcp_client.McpError("NOT_FOUND", "not found")
+
+    monkeypatch.setattr(mcp_client, "call_tool", call_tool)
 
 
 def test_a_ticket_question_is_answered_from_the_incident_manager_and_reports_its_source(incident_client, pipeline, ticket, monkeypatch):
@@ -138,7 +143,7 @@ def test_a_ticket_question_is_answered_from_the_incident_manager_and_reports_its
     assert seen["context"][0]["source_document"] == "incident-manager" and "status in_progress" in seen["context"][0]["text"]  # the real record
 
 
-def test_a_missing_ticket_is_an_honest_200_not_an_error_and_not_a_made_up_status(incident_client, pipeline, monkeypatch):
+def test_a_missing_ticket_is_an_honest_200_not_an_error_and_not_a_made_up_status(incident_client, pipeline, ticket, monkeypatch):
     monkeypatch.setattr(rag, "generate_answer", lambda *a, **k: pytest.fail("no model must be asked about a ticket that does not exist"))
     response = incident_client.post("/agent/query", json={"question": "What's the status of ticket 99999?"})
     assert response.status_code == 200 and "couldn't find a ticket 99999" in response.json()["answer"]
