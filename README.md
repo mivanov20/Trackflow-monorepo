@@ -30,6 +30,30 @@ This repository is the **starter template** for transversal projects. You will w
 
 ---
 
+## Run with Docker
+
+The whole development environment is defined as code, so a new developer needs only [Docker Desktop](https://www.docker.com/products/docker-desktop/) (no Node, Python or global packages):
+
+```bash
+docker compose up
+```
+
+That is the only step. The first run builds the images (a few minutes); later runs start in seconds.
+
+| Service | What runs | Open it at |
+| --- | --- | --- |
+| `ui` | `uis/website` and `uis/backoffice`, both with `next dev` (hot reload), started by `uis/start.sh` | website <http://localhost:3000>, backoffice <http://localhost:3001> |
+| `api` | `services/` with `uvicorn --reload` | <http://localhost:8000> (docs at `/docs`) |
+
+- **Hot reload:** the source code is bind-mounted, so saving a file on your machine updates the browser (UIs) or restarts the API without rebuilding. Dependencies and Next caches live in Docker volumes, separate from the ones on your machine.
+- **Configuration:** all values come from environment variables. `docker compose up` works without any `.env` (a local SQLite database, a random `JWT_SECRET` generated each time the API container starts, and password-reset links written to the API log). To change anything, copy `.env.example` to `.env` (Git ignores it) and edit it, for example to use Supabase (`DATABASE_URL`), keep sessions across restarts (`JWT_SECRET`) or send real email (`EMAIL_PROVIDER=resend`, `RESEND_API_KEY`). Never put real secrets in `docker-compose.yml`, a `Dockerfile` or `.env.example`.
+- **Services talk by name, not by `localhost`:** both containers are on the network `trackflow-net`. The backoffice server reaches the API at `http://api:8000` (`API_INTERNAL_URL`). The browser cannot resolve a Docker service name, so it calls `/backend/...` on the backoffice, which forwards the request to `http://api:8000`; no CORS is involved. Outside Docker nothing changes: the browser keeps using `NEXT_PUBLIC_INVENTORY_API_URL` (`http://localhost:8000`).
+- **Ports already in use?** Set `WEBSITE_HOST_PORT`, `BACKOFFICE_HOST_PORT` or `API_HOST_PORT` in `.env`.
+- **Useful commands:** `docker compose logs -f api` (API log, including reset links), `docker compose down` (stop), `docker compose down -v` (stop and delete the volumes: database, accounts, dependencies), `docker compose build` after changing a `package.json` or `requirements.txt` (then `docker compose down -v` so the UI volumes pick up the new dependencies).
+- **Not included:** the candidates app at the repository root (it also uses port 3000) and the static `uis/talent-pipeline-tracker`.
+
+---
+
 ## How to think about this monorepo
 
 You are building **one company** across many milestones and projects. Each top-level folder has a **single responsibility** — like a real engineering team repo.

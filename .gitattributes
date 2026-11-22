@@ -1,0 +1,6 @@
+# Los scripts y archivos de Docker se ejecutan dentro de contenedores Linux: siempre con saltos de línea LF.
+# Sin esto, Git en Windows puede convertirlos a CRLF y el contenedor falla con "/bin/sh^M: bad interpreter".
+*.sh text eol=lf
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+docker-compose.yml text eol=lf
