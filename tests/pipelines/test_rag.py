@@ -365,3 +365,18 @@ def test_the_evaluation_harness_computes_recall_at_3_and_a_threshold_recommendat
     assert all(len(row["top3"]) == 3 for row in result["per_question"])  # k=3, no threshold while ranking
     assert result["target"] == 0.8 and len(result["off_topic"]) == len(_queries()["off_topic"])
     assert all(row["hit_at_3"] == (row["rank_of_expected"] is not None) for row in result["per_question"])
+
+
+# ------------------------------------------------------------------ .env for the scripts
+def test_the_env_file_is_read_without_overriding_the_environment_and_skips_empty_values(tmp_path, monkeypatch):
+    env = tmp_path / ".env"
+    env.write_text('# comment\nLLM_API_URL=https://models.test/v1\nLLM_API_KEY="quoted-key"\nEMBEDDING_MODEL=\nLLM_MODEL=from-file\n', encoding="utf-8")
+    for name in ("LLM_API_URL", "LLM_API_KEY", "EMBEDDING_MODEL", "LLM_MODEL"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("LLM_MODEL", "already-set")
+    loaded = config.load_env_file(env)
+    assert sorted(loaded) == ["LLM_API_KEY", "LLM_API_URL"]  # the empty one and the one already set are left alone
+    assert config.llm_api_url() == "https://models.test/v1" and config.llm_api_key() == "quoted-key"
+    assert config.generation_model() == "already-set" and config.embedding_model() == ""
+    monkeypatch.delenv("LLM_API_URL"), monkeypatch.delenv("LLM_API_KEY")  # the loader set them for real: clean up
+    assert config.load_env_file(tmp_path / "missing.env") == []

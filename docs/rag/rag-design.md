@@ -86,7 +86,7 @@ Why it fits this corpus: every business rule keeps its condition in the same chu
 
 ```powershell
 docker compose up -d qdrant                     # Qdrant on :6333 (QDRANT_URL=http://localhost:6333 outside Docker)
-# put LLM_API_URL, LLM_API_KEY, EMBEDDING_MODEL, LLM_MODEL in .env
+# put LLM_API_URL, LLM_API_KEY, EMBEDDING_MODEL, LLM_MODEL in .env (the scripts read it too; .env is not committed)
 python scripts/index_knowledge_base.py           # setup(): safe to run again
 python scripts/evaluate_rag.py                   # Recall@3 and the min_score recommendation
 docker compose up -d api ui                      # POST /knowledge/query, page: /backoffice/knowledge ("Ask TrackFlow")

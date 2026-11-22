@@ -10,6 +10,28 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
+
+def load_env_file(path: Path | None = None) -> list[str]:
+    """Reads KEY=VALUE lines of the repo-root `.env` into the environment, so the scripts run from a terminal see the same
+    settings as Docker Compose. Variables already set win, and empty values are skipped. Returns the names it set."""
+    path = path or ROOT / ".env"
+    if not path.is_file():
+        return []
+    loaded = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key, value = key.strip(), value.strip().strip("\"'")
+        if key and value and key not in os.environ:
+            os.environ[key] = value
+            loaded.append(key)
+    return loaded
+
+
+load_env_file()
+
 # --- CONTEXT-company.md ---
 COMPANY = "trackflow"
 LANGUAGE = "en"
