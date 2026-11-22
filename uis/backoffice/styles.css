@@ -451,3 +451,19 @@ td .status + .small-button { margin-left: 10px; }
 .analysis-period label { display: grid; gap: 4px; font-size: 13px; }
 
 .knowledge-answer p { margin: 0 0 10px; line-height: 1.55; font-size: 15px; }
+
+/* RFP intake (Milestone 9) */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.rfp-status { display: inline-flex; align-items: center; min-height: 24px; padding: 0 10px; font-weight: 700; vertical-align: middle; }
+.rfp-status-analyzing { background: #fbf2e7; color: #a36a21; }
+.rfp-status-intake_complete { background: #edf5ea; color: #4e7a43; }
+.rfp-status-discarded { background: #f1f1ef; color: #7d7d78; }
+.rfp-status-failed { background: #fff2f0; color: #873c35; }
+.rfp-summary p { margin: 0 0 8px; line-height: 1.55; font-size: 14px; }
+.rfp-sections { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.rfp-section { border: 1px solid #d8e0da; border-radius: 6px; padding: 12px 14px; background: white; }
+.rfp-section h4 { margin: 0 0 4px; font-size: 14px; }
+.rfp-section p { margin: 6px 0; font-size: 13px; line-height: 1.5; }
+.rfp-list { margin: 0 0 6px; padding-left: 18px; font-size: 13px; line-height: 1.5; }
+.rfp-steps { margin: 8px 0 0; padding-left: 18px; font-size: 12px; line-height: 1.6; }
+.rfp-meta th { width: 220px; text-align: left; }

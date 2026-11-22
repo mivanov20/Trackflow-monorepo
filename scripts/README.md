@@ -47,3 +47,8 @@ Needs `DATABASE_URL`. Optional: `NIGHTLY_PIPELINE_COMMAND` replaces the pipeline
 - **States and lock:** `pending -> processing -> completed | failed`, in `job_runs` (`services/job_runner.py`). The `processing` status is the lock; a second instance, or a day that already completed, is skipped with one INFO line.
 - **Trigger:** `scripts/nightly_export.crontab`, `0 1 * * *` in UTC, installed with `crontab scripts/nightly_export.crontab`. On Windows, a Task Scheduler task running the same command does the same.
 - **Not in the API:** the script is its own process and imports no FastAPI code.
+
+## `rfp_intake.py`
+
+`python scripts/rfp_intake.py smoke <pdf>` runs the RFP intake agents on one PDF in memory; `reprocess <ticket_id>` / `reprocess --all-failed` runs the pipeline again for tickets (for example after a restart
+interrupted them); `list` shows the tickets. Same pipeline as the API, no HTTP. See [docs/rfp/design.md](../docs/rfp/design.md).

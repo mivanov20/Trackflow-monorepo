@@ -12,3 +12,9 @@ Each subfolder or file under `data/pipelines/` should represent **one pipeline o
 ## Pipelines
 
 - **Weekly Warehouse & Client Performance** (business KPIs per warehouse and client, from `telemetry_events` into `reporting.weekly_warehouse_client_performance`): design in [PIPELINE_DESIGN.md](./PIPELINE_DESIGN.md). Implementation comes next.
+
+## `rfp_intake/` (Milestone 9, part 1)
+
+The dedicated LangGraph that turns an uploaded RFP PDF into a classified, department-split analysis: `convert` (MarkItDown) → `classify` → `analyze` (metadata + readability) →
+`orchestrate` → parallel `warehouse_worker` / `lastmile_worker` / `reverse_worker` → `synthesize`. The API router (`services/routers/rfp.py`) only triggers `run_intake` and reads
+tickets. Design, limits and the handoff contract for Part 2: [docs/rfp/design.md](../../docs/rfp/design.md), [docs/rfp/handoff-contract.md](../../docs/rfp/handoff-contract.md).

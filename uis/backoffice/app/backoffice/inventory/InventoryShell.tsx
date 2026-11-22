@@ -41,6 +41,7 @@ export function InventoryShell({ children }: { children: ReactNode }) {
         </nav>
         <nav aria-label="Account" className="incident-nav">
           <Link href="/backoffice/knowledge">Ask TrackFlow</Link>
+          <Link href="/backoffice/rfp">RFP intake</Link>
           <Link href="/backoffice/reporting">Weekly performance report</Link>
           <Link href="/backoffice/telemetry">System health</Link>
           <Link href="/account/profile">My account</Link>

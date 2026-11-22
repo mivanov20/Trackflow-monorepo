@@ -18,4 +18,7 @@ langgraph-checkpoint-sqlite>=3.0,<4.0
 mcp>=1.24,<2.0
 langchain-mcp-adapters>=0.3,<1.0
 prefect>=3.0,<4.0
+markitdown[pdf]>=0.1,<1.0
+py-readability-metrics>=1.4,<2.0
+nltk>=3.9,<4.0
 -e ./packages/shared
