@@ -311,6 +311,24 @@ def render_coverage():
     return "\n".join(lines)
 
 
+READINESS = {
+    "stock_threshold_triggered": "After prerequisite 1",
+    "inventory_discrepancy_detected": "After prerequisite 2",
+    "direct_stock_edit_rejected": "Partly: the `405` channel now, the payload channel after prerequisite 3",
+    "stock_integrity_violation_detected": "After prerequisite 4",
+}
+
+
+def render_quickref():
+    lines = ["| Event | Produced by | Instrument at | Fires when | Mode | Ready |", "|---|---|---|---|---|---|"]
+    for e in sorted(ev.EVENTS, key=order_key):
+        ready = READINESS.get(e["type"], "Yes")
+        lines.append(
+            f"| `{e['type']}` | {', '.join(e['source'])} | {esc(e['emit_at'])} | {esc(e['trigger'])} | {e['delivery']} | {esc(ready)} |"
+        )
+    return "\n".join(lines)
+
+
 def render_vocab():
     return (
         f"- Warehouses: {', '.join(f'`{w}`' for w in ev.WAREHOUSES)} (country `US` and `ES`).\n"
@@ -332,6 +350,7 @@ PLACEHOLDERS = {
     "DELIVERY_TABLE": render_delivery_table,
     "VOLUME_TABLE": render_volume_table,
     "VOCAB": render_vocab,
+    "QUICKREF": render_quickref,
     "SCHEMA_VERSION": lambda: ev.SCHEMA_VERSION,
     "EVENT_COUNT": lambda: str(len(ev.EVENTS)),
 }

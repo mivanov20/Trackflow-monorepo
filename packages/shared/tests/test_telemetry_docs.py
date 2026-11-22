@@ -154,3 +154,18 @@ def test_every_property_is_described_in_the_markdown():
 def test_committed_files_are_up_to_date():
     result = subprocess.run([sys.executable, str(TELEMETRY_DIR / "build.py"), "--check"], capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_quick_reference_has_a_row_per_event_with_readiness():
+    section = PLAN.split("### 3.6 Instrumentation quick reference")[1].split("## 4.")[0]
+    for e in ev.EVENTS:
+        row = next((line for line in section.splitlines() if line.startswith(f"| `{e['type']}` |")), None)
+        assert row, e["type"]
+        assert e["emit_at"].replace("|", "\\|") in row
+
+
+def test_transport_and_prerequisites_are_specified():
+    for heading in ("## 9. Transport", "### 9.2 Collector endpoint", "### 9.3 Browser producer", "### 9.4 Backend producer", "## 10. Prerequisites"):
+        assert heading in PLAN
+    for needle in ("POST /telemetry/events", "202", "429", "Retry-After", "X-Request-ID", "min_stock", "stock_is_read_only", "warehouse_mismatch", "TELEMETRY_PEPPER"):
+        assert needle in PLAN, needle
