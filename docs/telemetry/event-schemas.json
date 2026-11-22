@@ -1,0 +1,3547 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://trackflow.example/telemetry/event-schemas.json",
+  "title": "TrackFlow telemetry event schemas",
+  "description": "Validate an event in two steps: it must match #/definitions/envelope, then the schema at #/events/<event_type>, which re-applies the envelope, fixes the event_type and allowlists the properties. Unknown properties are rejected (additionalProperties: false). Custom x-* keywords are documentation for humans and for the pipeline; validators ignore them.",
+  "x-schemaVersion": "1.0.0",
+  "x-taxonomy": {
+    "verbs": {
+      "created": "a business record was persisted (after the commit, never before)",
+      "rejected": "the system refused a request because of validation or a business rule",
+      "denied": "the system refused a request because the caller is not authorised (HTTP 403)",
+      "triggered": "a configured rule fired (for example a stock minimum was crossed)",
+      "detected": "the system observed a condition on its own (an audit, a scan, an integrity check)",
+      "failed": "something that should have worked did not (an attempt or a delivery)",
+      "caught": "an unexpected error was intercepted",
+      "returned": "an operation answered with an error status",
+      "recorded": "a measurement was taken (latency, load time)",
+      "succeeded": "an attempt worked (sign-in)",
+      "requested": "someone asked for something that completes later (password reset link)",
+      "completed": "a multi-step process reached its end",
+      "registered": "a new account was created",
+      "changed": "an existing record moved from one value to another",
+      "expired": "a time-limited thing ran out (a session)",
+      "viewed": "a screen was shown",
+      "started": "a guided task or a process began",
+      "abandoned": "a guided task was left unfinished",
+      "applied": "the user used a filter",
+      "analyzed": "a file went through the analysis"
+    },
+    "categories": {
+      "inventory": "Inventory (business)",
+      "authentication": "Authentication and access",
+      "incidents": "Incident management (business)",
+      "navigation": "Navigation and engagement",
+      "performance": "Performance",
+      "errors": "Errors and platform health"
+    }
+  },
+  "definitions": {
+    "envelope": {
+      "type": "object",
+      "required": [
+        "eventId",
+        "timestamp",
+        "sessionId",
+        "userId",
+        "event_type",
+        "schemaVersion",
+        "requestId",
+        "properties"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "description": "Unique id of this event. Lets the pipeline drop duplicates when a batch is retried."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$",
+          "description": "When the thing happened, taken on the producer, for example `2026-11-21T14:03:22.418Z`. Always UTC with a `Z`."
+        },
+        "sessionId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "description": "One browser session (created at sign-in, regenerated at sign-out). `null` only for events with no user session (service start, scheduled scans)."
+        },
+        "userId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "description": "Internal account id (`User.user_id`). It is pseudonymous: no name, no email. `null` for anonymous callers (failed logins) and system events."
+        },
+        "event_type": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)+$",
+          "enum": [
+            "inbound_order_created",
+            "outbound_order_created",
+            "stock_threshold_triggered",
+            "direct_stock_edit_rejected",
+            "inventory_discrepancy_detected",
+            "inbound_order_rejected",
+            "outbound_order_rejected",
+            "product_created",
+            "stock_integrity_violation_detected",
+            "login_succeeded",
+            "login_failed",
+            "session_expired",
+            "user_registered",
+            "password_reset_requested",
+            "password_reset_completed",
+            "password_reset_rejected",
+            "password_changed",
+            "password_change_rejected",
+            "access_denied",
+            "user_role_changed",
+            "incident_created",
+            "incident_status_changed",
+            "incident_file_analyzed",
+            "incident_file_rejected",
+            "page_viewed",
+            "flow_started",
+            "flow_abandoned",
+            "filter_applied",
+            "form_validation_failed",
+            "api_latency_recorded",
+            "page_load_recorded",
+            "query_slow_detected",
+            "frontend_error_caught",
+            "api_error_returned",
+            "network_request_failed",
+            "email_delivery_failed",
+            "service_started"
+          ],
+          "description": "Event name in `entity_action` format (lowercase snake case, entity first, then the verb from the controlled list)."
+        },
+        "schemaVersion": {
+          "type": "string",
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$",
+          "description": "Version of the schema this event follows, for example `1.0.0`."
+        },
+        "requestId": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "description": "Correlation id. The frontend creates one per user action and sends it as `X-Request-ID`; the API reuses it, or creates one when absent, and writes it on every event of that request. For events with no request, a fresh UUID."
+        },
+        "properties": {
+          "type": "object",
+          "description": "Event-specific payload. Only the keys allowlisted for that `event_type` are accepted."
+        }
+      }
+    }
+  },
+  "events": {
+    "inbound_order_created": {
+      "title": "inbound_order_created",
+      "description": "A warehouse registered the receipt of goods from a client.",
+      "x-class": "mandatory",
+      "x-category": "inventory",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "hourly",
+      "x-hypothesis": "how much volume comes in, by client and by warehouse",
+      "x-decision": "plan warehouse capacity and staffing based on incoming volume (Ana)",
+      "x-statement": "We capture inbound_order_created because we need to know how much volume comes in, by client and by warehouse, which allows us to make the decision plan warehouse capacity and staffing based on incoming volume (Ana).",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "inbound_order_created"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "warehouse",
+                "country",
+                "client_id",
+                "product_id",
+                "product_category",
+                "order_id",
+                "quantity",
+                "stock_after",
+                "has_client_reference"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "warehouse": {
+                  "type": "string",
+                  "enum": [
+                    "los_angeles",
+                    "zaragoza"
+                  ],
+                  "description": "Warehouse where the stock sits or where the movement happened (los_angeles or zaragoza).",
+                  "x-pii": "none"
+                },
+                "country": {
+                  "type": "string",
+                  "enum": [
+                    "US",
+                    "ES"
+                  ],
+                  "description": "Country of the warehouse, so dashboards can compare the United States with Spain without a join.",
+                  "x-pii": "none"
+                },
+                "client_id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+                  "maxLength": 64,
+                  "description": "The brand (B2B client) that owns the SKU. Each SKU belongs to exactly one client.",
+                  "x-pii": "none"
+                },
+                "product_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._-]{1,64}$",
+                  "description": "The SKU code of the product.",
+                  "x-pii": "none"
+                },
+                "product_category": {
+                  "type": "string",
+                  "enum": [
+                    "fashion",
+                    "electronics",
+                    "cosmetics"
+                  ],
+                  "description": "Category of the product (fashion, electronics or cosmetics).",
+                  "x-pii": "none"
+                },
+                "order_id": {
+                  "type": "string",
+                  "pattern": "^[0-9]{1,18}$",
+                  "description": "Identifier of the inbound or outbound order, as text.",
+                  "x-pii": "none"
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Units received in this order.",
+                  "x-pii": "none"
+                },
+                "stock_after": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Stock of the SKU in that warehouse after the receipt.",
+                  "x-pii": "none"
+                },
+                "has_client_reference": {
+                  "type": "boolean",
+                  "description": "Whether the operator entered the client's reference (for example a purchase order number). The reference text is not captured.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "outbound_order_created": {
+      "title": "outbound_order_created",
+      "description": "A warehouse completed the picking and dispatch (or a confirmed loss) of an outbound order.",
+      "x-class": "mandatory",
+      "x-category": "inventory",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "stream",
+      "x-delivery-window": "within 60 seconds",
+      "x-hypothesis": "how many orders are processed, by client and warehouse, and at what rate",
+      "x-decision": "detect operational bottlenecks before they affect the delivery SLA (Ana)",
+      "x-statement": "We capture outbound_order_created because we need to know how many orders are processed, by client and warehouse, and at what rate, which allows us to make the decision detect operational bottlenecks before they affect the delivery SLA (Ana).",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "outbound_order_created"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "warehouse",
+                "country",
+                "client_id",
+                "product_id",
+                "product_category",
+                "order_id",
+                "exit_type",
+                "quantity",
+                "stock_after"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "warehouse": {
+                  "type": "string",
+                  "enum": [
+                    "los_angeles",
+                    "zaragoza"
+                  ],
+                  "description": "Warehouse where the stock sits or where the movement happened (los_angeles or zaragoza).",
+                  "x-pii": "none"
+                },
+                "country": {
+                  "type": "string",
+                  "enum": [
+                    "US",
+                    "ES"
+                  ],
+                  "description": "Country of the warehouse, so dashboards can compare the United States with Spain without a join.",
+                  "x-pii": "none"
+                },
+                "client_id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+                  "maxLength": 64,
+                  "description": "The brand (B2B client) that owns the SKU. Each SKU belongs to exactly one client.",
+                  "x-pii": "none"
+                },
+                "product_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._-]{1,64}$",
+                  "description": "The SKU code of the product.",
+                  "x-pii": "none"
+                },
+                "product_category": {
+                  "type": "string",
+                  "enum": [
+                    "fashion",
+                    "electronics",
+                    "cosmetics"
+                  ],
+                  "description": "Category of the product (fashion, electronics or cosmetics).",
+                  "x-pii": "none"
+                },
+                "order_id": {
+                  "type": "string",
+                  "pattern": "^[0-9]{1,18}$",
+                  "description": "Identifier of the inbound or outbound order, as text.",
+                  "x-pii": "none"
+                },
+                "exit_type": {
+                  "type": "string",
+                  "enum": [
+                    "dispatch",
+                    "loss"
+                  ],
+                  "description": "`dispatch` (goods leave for delivery) or `loss` (confirmed loss).",
+                  "x-pii": "none"
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Units that left the warehouse in this order.",
+                  "x-pii": "none"
+                },
+                "stock_after": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Stock of the SKU in that warehouse after the exit.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "stock_threshold_triggered": {
+      "title": "stock_threshold_triggered",
+      "description": "A SKU's stock fell below the configured minimum for its client (or reached zero).",
+      "x-class": "mandatory",
+      "x-category": "inventory",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "stream",
+      "x-delivery-window": "within 60 seconds",
+      "x-hypothesis": "how often a client runs out of available stock for a SKU",
+      "x-decision": "alert the client and the commercial team before a stockout (Miguel)",
+      "x-statement": "We capture stock_threshold_triggered because we need to know how often a client runs out of available stock for a SKU, which allows us to make the decision alert the client and the commercial team before a stockout (Miguel).",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "stock_threshold_triggered"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "warehouse",
+                "country",
+                "client_id",
+                "product_id",
+                "product_category",
+                "quantity",
+                "threshold",
+                "severity",
+                "order_id"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "warehouse": {
+                  "type": "string",
+                  "enum": [
+                    "los_angeles",
+                    "zaragoza"
+                  ],
+                  "description": "Warehouse where the stock sits or where the movement happened (los_angeles or zaragoza).",
+                  "x-pii": "none"
+                },
+                "country": {
+                  "type": "string",
+                  "enum": [
+                    "US",
+                    "ES"
+                  ],
+                  "description": "Country of the warehouse, so dashboards can compare the United States with Spain without a join.",
+                  "x-pii": "none"
+                },
+                "client_id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+                  "maxLength": 64,
+                  "description": "The brand (B2B client) that owns the SKU. Each SKU belongs to exactly one client.",
+                  "x-pii": "none"
+                },
+                "product_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._-]{1,64}$",
+                  "description": "The SKU code of the product.",
+                  "x-pii": "none"
+                },
+                "product_category": {
+                  "type": "string",
+                  "enum": [
+                    "fashion",
+                    "electronics",
+                    "cosmetics"
+                  ],
+                  "description": "Category of the product (fashion, electronics or cosmetics).",
+                  "x-pii": "none"
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Stock level of the SKU in that warehouse after the movement that crossed the minimum.",
+                  "x-pii": "none"
+                },
+                "threshold": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "The configured minimum for that client and SKU, in units.",
+                  "x-pii": "none"
+                },
+                "severity": {
+                  "type": "string",
+                  "enum": [
+                    "below_minimum",
+                    "out_of_stock"
+                  ],
+                  "description": "`below_minimum` when stock is under the minimum, `out_of_stock` when it reached zero.",
+                  "x-pii": "none"
+                },
+                "order_id": {
+                  "type": "string",
+                  "pattern": "^[0-9]{1,18}$",
+                  "description": "Identifier of the inbound or outbound order, as text.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "direct_stock_edit_rejected": {
+      "title": "direct_stock_edit_rejected",
+      "description": "A user tried to change stock directly, outside an inbound or outbound order, and the system refused.",
+      "x-class": "mandatory",
+      "x-category": "inventory",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "hourly",
+      "x-hypothesis": "if warehouse staff are attempting to bypass the traceability controls",
+      "x-decision": "reinforce training or permissions at the warehouse where this happens most",
+      "x-statement": "We capture direct_stock_edit_rejected because we need to know if warehouse staff are attempting to bypass the traceability controls, which allows us to make the decision reinforce training or permissions at the warehouse where this happens most.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "direct_stock_edit_rejected"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "warehouse",
+                "country",
+                "client_id",
+                "product_id",
+                "product_category",
+                "quantity",
+                "attempted_operation",
+                "attempt_channel",
+                "actor_role",
+                "http_method"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "warehouse": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "los_angeles",
+                    "zaragoza",
+                    null
+                  ],
+                  "description": "Warehouse where the stock sits or where the movement happened (los_angeles or zaragoza).",
+                  "x-pii": "none"
+                },
+                "country": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "US",
+                    "ES",
+                    null
+                  ],
+                  "description": "Country of the warehouse, so dashboards can compare the United States with Spain without a join.",
+                  "x-pii": "none"
+                },
+                "client_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+                  "maxLength": 64,
+                  "description": "The brand (B2B client) that owns the SKU. Each SKU belongs to exactly one client.",
+                  "x-pii": "none"
+                },
+                "product_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^[A-Za-z0-9._-]{1,64}$",
+                  "description": "The SKU code of the product.",
+                  "x-pii": "none"
+                },
+                "product_category": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "fashion",
+                    "electronics",
+                    "cosmetics",
+                    null
+                  ],
+                  "description": "Category of the product (fashion, electronics or cosmetics).",
+                  "x-pii": "none"
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "The stock value or change the user tried to apply (absolute value). 0 when the attempt carried no number.",
+                  "x-pii": "none"
+                },
+                "attempted_operation": {
+                  "type": "string",
+                  "enum": [
+                    "set_stock",
+                    "adjust_stock",
+                    "delete_product",
+                    "other"
+                  ],
+                  "description": "What the user tried to do to the stock.",
+                  "x-pii": "none"
+                },
+                "attempt_channel": {
+                  "type": "string",
+                  "enum": [
+                    "product_update_route",
+                    "stock_field_in_payload"
+                  ],
+                  "description": "Where the attempt was caught.",
+                  "x-pii": "none"
+                },
+                "actor_role": {
+                  "type": "string",
+                  "enum": [
+                    "admin",
+                    "manager",
+                    "user"
+                  ],
+                  "description": "Role of the signed-in user who did the action (admin, manager or user).",
+                  "x-pii": "none"
+                },
+                "http_method": {
+                  "type": "string",
+                  "enum": [
+                    "GET",
+                    "POST",
+                    "PUT",
+                    "PATCH",
+                    "DELETE"
+                  ],
+                  "description": "HTTP method of the rejected request.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "inventory_discrepancy_detected": {
+      "title": "inventory_discrepancy_detected",
+      "description": "A physical count or audit found a difference between the system's stock and the real stock.",
+      "x-class": "mandatory",
+      "x-category": "inventory",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "daily",
+      "x-hypothesis": "which SKUs and warehouses see the most discrepancies",
+      "x-decision": "prioritise inventory audits on the SKUs with the highest discrepancy rate (Ana)",
+      "x-statement": "We capture inventory_discrepancy_detected because we need to know which SKUs and warehouses see the most discrepancies, which allows us to make the decision prioritise inventory audits on the SKUs with the highest discrepancy rate (Ana).",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "inventory_discrepancy_detected"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "warehouse",
+                "country",
+                "client_id",
+                "product_id",
+                "product_category",
+                "quantity",
+                "system_quantity",
+                "counted_quantity",
+                "direction",
+                "count_id",
+                "detection_source"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "warehouse": {
+                  "type": "string",
+                  "enum": [
+                    "los_angeles",
+                    "zaragoza"
+                  ],
+                  "description": "Warehouse where the stock sits or where the movement happened (los_angeles or zaragoza).",
+                  "x-pii": "none"
+                },
+                "country": {
+                  "type": "string",
+                  "enum": [
+                    "US",
+                    "ES"
+                  ],
+                  "description": "Country of the warehouse, so dashboards can compare the United States with Spain without a join.",
+                  "x-pii": "none"
+                },
+                "client_id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+                  "maxLength": 64,
+                  "description": "The brand (B2B client) that owns the SKU. Each SKU belongs to exactly one client.",
+                  "x-pii": "none"
+                },
+                "product_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._-]{1,64}$",
+                  "description": "The SKU code of the product.",
+                  "x-pii": "none"
+                },
+                "product_category": {
+                  "type": "string",
+                  "enum": [
+                    "fashion",
+                    "electronics",
+                    "cosmetics"
+                  ],
+                  "description": "Category of the product (fashion, electronics or cosmetics).",
+                  "x-pii": "none"
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Absolute difference in units between the counted and the system stock.",
+                  "x-pii": "none"
+                },
+                "system_quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Stock the system showed at the moment of the count.",
+                  "x-pii": "none"
+                },
+                "counted_quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Units physically counted.",
+                  "x-pii": "none"
+                },
+                "direction": {
+                  "type": "string",
+                  "enum": [
+                    "shortage",
+                    "surplus"
+                  ],
+                  "description": "`shortage` when fewer units were found than the system shows, `surplus` when more.",
+                  "x-pii": "none"
+                },
+                "count_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,40}$",
+                  "description": "Identifier of the count or audit session.",
+                  "x-pii": "none"
+                },
+                "detection_source": {
+                  "type": "string",
+                  "enum": [
+                    "cycle_count",
+                    "full_audit",
+                    "spot_check"
+                  ],
+                  "description": "Kind of count that found it.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "inbound_order_rejected": {
+      "title": "inbound_order_rejected",
+      "description": "A goods receipt was refused by validation (unknown SKU, invalid quantity, invalid warehouse).",
+      "x-class": "identified_opportunity",
+      "x-category": "inventory",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "hourly",
+      "x-hypothesis": "which SKUs and warehouses accumulate failed receipts, and why",
+      "x-decision": "fix the SKU master data or retrain the receiving staff on the SKUs that fail most",
+      "x-statement": "We capture inbound_order_rejected because we need to know which SKUs and warehouses accumulate failed receipts, and why, which allows us to make the decision fix the SKU master data or retrain the receiving staff on the SKUs that fail most.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "inbound_order_rejected"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "warehouse",
+                "country",
+                "client_id",
+                "product_id",
+                "product_category",
+                "rejection_reason",
+                "http_status",
+                "actor_role"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "warehouse": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "los_angeles",
+                    "zaragoza",
+                    null
+                  ],
+                  "description": "Warehouse where the stock sits or where the movement happened (los_angeles or zaragoza).",
+                  "x-pii": "none"
+                },
+                "country": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "US",
+                    "ES",
+                    null
+                  ],
+                  "description": "Country of the warehouse, so dashboards can compare the United States with Spain without a join.",
+                  "x-pii": "none"
+                },
+                "client_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+                  "maxLength": 64,
+                  "description": "The brand (B2B client) that owns the SKU. Each SKU belongs to exactly one client.",
+                  "x-pii": "none"
+                },
+                "product_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^[A-Za-z0-9._-]{1,64}$",
+                  "description": "The SKU code of the product.",
+                  "x-pii": "none"
+                },
+                "product_category": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "fashion",
+                    "electronics",
+                    "cosmetics",
+                    null
+                  ],
+                  "description": "Category of the product (fashion, electronics or cosmetics).",
+                  "x-pii": "none"
+                },
+                "rejection_reason": {
+                  "type": "string",
+                  "enum": [
+                    "unknown_product",
+                    "invalid_quantity",
+                    "invalid_warehouse",
+                    "malformed_request"
+                  ],
+                  "description": "Why the receipt was refused.",
+                  "x-pii": "none"
+                },
+                "http_status": {
+                  "type": "integer",
+                  "minimum": 400,
+                  "maximum": 499,
+                  "description": "HTTP status returned to the user.",
+                  "x-pii": "none"
+                },
+                "quantity": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "Quantity the user tried to receive, when it was a valid number.",
+                  "x-pii": "none"
+                },
+                "requested_sku_id": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "Numeric product id sent in the request, useful when the SKU does not exist.",
+                  "x-pii": "none"
+                },
+                "actor_role": {
+                  "type": "string",
+                  "enum": [
+                    "admin",
+                    "manager",
+                    "user"
+                  ],
+                  "description": "Role of the signed-in user who did the action (admin, manager or user).",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "outbound_order_rejected": {
+      "title": "outbound_order_rejected",
+      "description": "An outbound order was refused: insufficient stock, unknown SKU or invalid data.",
+      "x-class": "identified_opportunity",
+      "x-category": "inventory",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "hourly",
+      "x-hypothesis": "which products block dispatch because the stock the system shows cannot cover the order, or because of data entry mistakes",
+      "x-decision": "order a recount for the products that repeatedly block dispatch, and fix the data entry problems behind the rest",
+      "x-statement": "We capture outbound_order_rejected because we need to know which products block dispatch because the stock the system shows cannot cover the order, or because of data entry mistakes, which allows us to make the decision order a recount for the products that repeatedly block dispatch, and fix the data entry problems behind the rest.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "outbound_order_rejected"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "warehouse",
+                "country",
+                "client_id",
+                "product_id",
+                "product_category",
+                "rejection_reason",
+                "http_status",
+                "actor_role"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "warehouse": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "los_angeles",
+                    "zaragoza",
+                    null
+                  ],
+                  "description": "Warehouse where the stock sits or where the movement happened (los_angeles or zaragoza).",
+                  "x-pii": "none"
+                },
+                "country": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "US",
+                    "ES",
+                    null
+                  ],
+                  "description": "Country of the warehouse, so dashboards can compare the United States with Spain without a join.",
+                  "x-pii": "none"
+                },
+                "client_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+                  "maxLength": 64,
+                  "description": "The brand (B2B client) that owns the SKU. Each SKU belongs to exactly one client.",
+                  "x-pii": "none"
+                },
+                "product_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^[A-Za-z0-9._-]{1,64}$",
+                  "description": "The SKU code of the product.",
+                  "x-pii": "none"
+                },
+                "product_category": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "fashion",
+                    "electronics",
+                    "cosmetics",
+                    null
+                  ],
+                  "description": "Category of the product (fashion, electronics or cosmetics).",
+                  "x-pii": "none"
+                },
+                "rejection_reason": {
+                  "type": "string",
+                  "enum": [
+                    "insufficient_stock",
+                    "unknown_product",
+                    "invalid_quantity",
+                    "missing_tracking_number",
+                    "tracking_number_not_allowed",
+                    "invalid_exit_type",
+                    "invalid_warehouse",
+                    "malformed_request"
+                  ],
+                  "description": "Why the order was refused.",
+                  "x-pii": "none"
+                },
+                "http_status": {
+                  "type": "integer",
+                  "minimum": 400,
+                  "maximum": 499,
+                  "description": "HTTP status returned to the user.",
+                  "x-pii": "none"
+                },
+                "exit_type": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "dispatch",
+                    "loss",
+                    null
+                  ],
+                  "description": "Type of exit the user tried to register.",
+                  "x-pii": "none"
+                },
+                "quantity": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "Quantity the user tried to dispatch, when it was a valid number.",
+                  "x-pii": "none"
+                },
+                "available_quantity": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "Stock available at the time, only for `insufficient_stock`.",
+                  "x-pii": "none"
+                },
+                "actor_role": {
+                  "type": "string",
+                  "enum": [
+                    "admin",
+                    "manager",
+                    "user"
+                  ],
+                  "description": "Role of the signed-in user who did the action (admin, manager or user).",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "product_created": {
+      "title": "product_created",
+      "description": "A new SKU was registered for a client in a warehouse.",
+      "x-class": "identified_opportunity",
+      "x-category": "inventory",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "daily",
+      "x-hypothesis": "how fast each client's catalogue grows, and in which warehouse and category",
+      "x-decision": "plan shelf space per client and follow up with clients whose catalogue has stopped growing (Miguel)",
+      "x-statement": "We capture product_created because we need to know how fast each client's catalogue grows, and in which warehouse and category, which allows us to make the decision plan shelf space per client and follow up with clients whose catalogue has stopped growing (Miguel).",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "product_created"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "warehouse",
+                "country",
+                "client_id",
+                "product_id",
+                "product_category",
+                "actor_role"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "warehouse": {
+                  "type": "string",
+                  "enum": [
+                    "los_angeles",
+                    "zaragoza"
+                  ],
+                  "description": "Warehouse where the stock sits or where the movement happened (los_angeles or zaragoza).",
+                  "x-pii": "none"
+                },
+                "country": {
+                  "type": "string",
+                  "enum": [
+                    "US",
+                    "ES"
+                  ],
+                  "description": "Country of the warehouse, so dashboards can compare the United States with Spain without a join.",
+                  "x-pii": "none"
+                },
+                "client_id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+                  "maxLength": 64,
+                  "description": "The brand (B2B client) that owns the SKU. Each SKU belongs to exactly one client.",
+                  "x-pii": "none"
+                },
+                "product_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._-]{1,64}$",
+                  "description": "The SKU code of the product.",
+                  "x-pii": "none"
+                },
+                "product_category": {
+                  "type": "string",
+                  "enum": [
+                    "fashion",
+                    "electronics",
+                    "cosmetics"
+                  ],
+                  "description": "Category of the product (fashion, electronics or cosmetics).",
+                  "x-pii": "none"
+                },
+                "actor_role": {
+                  "type": "string",
+                  "enum": [
+                    "admin",
+                    "manager",
+                    "user"
+                  ],
+                  "description": "Role of the signed-in user who did the action (admin, manager or user).",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "stock_integrity_violation_detected": {
+      "title": "stock_integrity_violation_detected",
+      "description": "One of the system's own inventory rules was found broken: negative stock, a movement in a different warehouse than its SKU, or a movement without a product.",
+      "x-class": "identified_opportunity",
+      "x-category": "inventory",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "stream",
+      "x-delivery-window": "within 60 seconds",
+      "x-hypothesis": "whether the rules the business relies on (stock never negative, movement in the SKU's warehouse) are being broken by a bug or by bad data",
+      "x-decision": "stop the line: block the affected flow and repair the data before more movements pile on top of it",
+      "x-statement": "We capture stock_integrity_violation_detected because we need to know whether the rules the business relies on (stock never negative, movement in the SKU's warehouse) are being broken by a bug or by bad data, which allows us to make the decision stop the line: block the affected flow and repair the data before more movements pile on top of it.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "stock_integrity_violation_detected"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "warehouse",
+                "country",
+                "client_id",
+                "product_id",
+                "product_category",
+                "violation_type",
+                "detection_point",
+                "quantity"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "warehouse": {
+                  "type": "string",
+                  "enum": [
+                    "los_angeles",
+                    "zaragoza"
+                  ],
+                  "description": "Warehouse where the stock sits or where the movement happened (los_angeles or zaragoza).",
+                  "x-pii": "none"
+                },
+                "country": {
+                  "type": "string",
+                  "enum": [
+                    "US",
+                    "ES"
+                  ],
+                  "description": "Country of the warehouse, so dashboards can compare the United States with Spain without a join.",
+                  "x-pii": "none"
+                },
+                "client_id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+                  "maxLength": 64,
+                  "description": "The brand (B2B client) that owns the SKU. Each SKU belongs to exactly one client.",
+                  "x-pii": "none"
+                },
+                "product_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._-]{1,64}$",
+                  "description": "The SKU code of the product.",
+                  "x-pii": "none"
+                },
+                "product_category": {
+                  "type": "string",
+                  "enum": [
+                    "fashion",
+                    "electronics",
+                    "cosmetics"
+                  ],
+                  "description": "Category of the product (fashion, electronics or cosmetics).",
+                  "x-pii": "none"
+                },
+                "violation_type": {
+                  "type": "string",
+                  "enum": [
+                    "negative_stock",
+                    "warehouse_mismatch",
+                    "orphan_movement"
+                  ],
+                  "description": "Which rule was broken.",
+                  "x-pii": "none"
+                },
+                "detection_point": {
+                  "type": "string",
+                  "enum": [
+                    "request_check",
+                    "periodic_scan"
+                  ],
+                  "description": "Where the problem was found.",
+                  "x-pii": "none"
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Units involved: the movement quantity, or the size of the negative stock.",
+                  "x-pii": "none"
+                },
+                "expected_warehouse": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "los_angeles",
+                    "zaragoza",
+                    null
+                  ],
+                  "description": "Warehouse the SKU belongs to.",
+                  "x-pii": "none"
+                },
+                "observed_warehouse": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "los_angeles",
+                    "zaragoza",
+                    null
+                  ],
+                  "description": "Warehouse recorded on the movement.",
+                  "x-pii": "none"
+                },
+                "order_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^[0-9]{1,18}$",
+                  "description": "The movement involved, when there is one.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "login_succeeded": {
+      "title": "login_succeeded",
+      "description": "A user signed in with the right credentials.",
+      "x-class": "identified_opportunity",
+      "x-category": "authentication",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "hourly",
+      "x-hypothesis": "how many operators sign in per hour and per day, and how often they need several attempts",
+      "x-decision": "size support coverage and shift schedules, and tune the lockout and rate limits with real data",
+      "x-statement": "We capture login_succeeded because we need to know how many operators sign in per hour and per day, and how often they need several attempts, which allows us to make the decision size support coverage and shift schedules, and tune the lockout and rate limits with real data.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "login_succeeded"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "user_role",
+                "method",
+                "failures_before_success",
+                "is_first_login"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "user_role": {
+                  "type": "string",
+                  "enum": [
+                    "admin",
+                    "manager",
+                    "user"
+                  ],
+                  "description": "Role of the user who signed in.",
+                  "x-pii": "none"
+                },
+                "method": {
+                  "type": "string",
+                  "enum": [
+                    "password"
+                  ],
+                  "description": "How the user authenticated. Only `password` exists today; the field keeps the schema stable if single sign-on is added.",
+                  "x-pii": "none"
+                },
+                "failures_before_success": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Failed attempts for this account in the previous 15 minutes.",
+                  "x-pii": "none"
+                },
+                "is_first_login": {
+                  "type": "boolean",
+                  "description": "Whether this is the first sign-in of the account.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "login_failed": {
+      "title": "login_failed",
+      "description": "A sign-in attempt was refused.",
+      "x-class": "identified_opportunity",
+      "x-category": "authentication",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "stream",
+      "x-delivery-window": "within 60 seconds",
+      "x-hypothesis": "whether failed sign-ins are forgotten passwords or an attack (many attempts, or many different accounts)",
+      "x-decision": "enable rate limiting or account lockout, block abusive sources, or force password resets",
+      "x-statement": "We capture login_failed because we need to know whether failed sign-ins are forgotten passwords or an attack (many attempts, or many different accounts), which allows us to make the decision enable rate limiting or account lockout, block abusive sources, or force password resets.",
+      "x-pii": "pseudonymized",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "login_failed"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "failure_reason",
+                "email_hash",
+                "attempts_in_window"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "failure_reason": {
+                  "type": "string",
+                  "enum": [
+                    "unknown_account",
+                    "wrong_password",
+                    "account_disabled"
+                  ],
+                  "description": "Internal reason for the refusal.",
+                  "x-pii": "none"
+                },
+                "email_hash": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$",
+                  "description": "Keyed hash of the email that was tried, to count attempts per account without storing the address.",
+                  "x-pii": "pseudonymized",
+                  "x-sanitization": "First 16 hex characters of HMAC-SHA256(lowercased email, TELEMETRY_PEPPER). The pepper is a secret kept outside the repository."
+                },
+                "source_network_hash": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^[0-9a-f]{16}$",
+                  "description": "Keyed hash of the caller's network (IPv4 truncated to /24, IPv6 to /48), to spot one source trying many accounts.",
+                  "x-pii": "pseudonymized",
+                  "x-sanitization": "First 16 hex characters of HMAC-SHA256(truncated address, TELEMETRY_PEPPER). The raw address is never stored. Retention 30 days."
+                },
+                "attempts_in_window": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Failed attempts for this email hash in the last 15 minutes, including this one.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "session_expired": {
+      "title": "session_expired",
+      "description": "A signed-in user was sent back to the login page because the session stopped being valid.",
+      "x-class": "identified_opportunity",
+      "x-category": "authentication",
+      "x-source": [
+        "frontend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "hourly",
+      "x-hypothesis": "whether the 8-hour session matches real shift length, and how often operators are cut off mid-task",
+      "x-decision": "change the session lifetime, add silent renewal, or warn the user before it ends",
+      "x-statement": "We capture session_expired because we need to know whether the 8-hour session matches real shift length, and how often operators are cut off mid-task, which allows us to make the decision change the session lifetime, add silent renewal, or warn the user before it ends.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "session_expired"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "reason",
+                "route_template"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "token_expired",
+                    "token_invalid",
+                    "password_changed",
+                    "account_removed"
+                  ],
+                  "description": "Why the session was no longer valid.",
+                  "x-pii": "none"
+                },
+                "session_age_seconds": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "How long ago the session started, if known.",
+                  "x-pii": "none"
+                },
+                "route_template": {
+                  "type": "string",
+                  "pattern": "^/[A-Za-z0-9_{}./-]{0,119}$",
+                  "description": "Route where the expiry was noticed.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "user_registered": {
+      "title": "user_registered",
+      "description": "A new account was created.",
+      "x-class": "identified_opportunity",
+      "x-category": "authentication",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "daily",
+      "x-hypothesis": "how many accounts are created, how much optional profile data people give, and whether the legacy register route is still used",
+      "x-decision": "simplify or extend the sign-up form, and retire `/auth/register` once nobody uses it",
+      "x-statement": "We capture user_registered because we need to know how many accounts are created, how much optional profile data people give, and whether the legacy register route is still used, which allows us to make the decision simplify or extend the sign-up form, and retire `/auth/register` once nobody uses it.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "user_registered"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "initial_role",
+                "has_name",
+                "has_phone",
+                "has_address",
+                "registration_channel"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "initial_role": {
+                  "type": "string",
+                  "enum": [
+                    "user"
+                  ],
+                  "description": "Role given at creation. Registration always yields `user`.",
+                  "x-pii": "none"
+                },
+                "has_name": {
+                  "type": "boolean",
+                  "description": "Whether a name was provided.",
+                  "x-pii": "none"
+                },
+                "has_phone": {
+                  "type": "boolean",
+                  "description": "Whether a phone number was provided.",
+                  "x-pii": "none"
+                },
+                "has_address": {
+                  "type": "boolean",
+                  "description": "Whether an address was provided.",
+                  "x-pii": "none"
+                },
+                "registration_channel": {
+                  "type": "string",
+                  "enum": [
+                    "users_endpoint",
+                    "legacy_register_alias"
+                  ],
+                  "description": "Which endpoint was used.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "password_reset_requested": {
+      "title": "password_reset_requested",
+      "description": "Someone asked for a password reset link.",
+      "x-class": "identified_opportunity",
+      "x-category": "authentication",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "hourly",
+      "x-hypothesis": "how many people forget their password, and whether unknown addresses are being probed",
+      "x-decision": "review the password policy or add single sign-on, and spot account-enumeration attempts",
+      "x-statement": "We capture password_reset_requested because we need to know how many people forget their password, and whether unknown addresses are being probed, which allows us to make the decision review the password policy or add single sign-on, and spot account-enumeration attempts.",
+      "x-pii": "pseudonymized",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "password_reset_requested"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "email_hash",
+                "account_found",
+                "throttled"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "email_hash": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$",
+                  "description": "Keyed hash of the email the link was requested for.",
+                  "x-pii": "pseudonymized",
+                  "x-sanitization": "First 16 hex characters of HMAC-SHA256(lowercased email, TELEMETRY_PEPPER), the same method as in `login_failed`."
+                },
+                "account_found": {
+                  "type": "boolean",
+                  "description": "Whether an active account exists for that email. Sensitive: restricted dataset only.",
+                  "x-pii": "sensitive",
+                  "x-sanitization": "Result of the account lookup. The API response never reveals it."
+                },
+                "throttled": {
+                  "type": "boolean",
+                  "description": "Whether the per-account cooldown suppressed the email.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "password_reset_completed": {
+      "title": "password_reset_completed",
+      "description": "A password was changed through a reset link.",
+      "x-class": "identified_opportunity",
+      "x-category": "authentication",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "daily",
+      "x-hypothesis": "how many requested resets are completed and how long people take",
+      "x-decision": "adjust the 30-minute link lifetime and the email wording, and judge email deliverability",
+      "x-statement": "We capture password_reset_completed because we need to know how many requested resets are completed and how long people take, which allows us to make the decision adjust the 30-minute link lifetime and the email wording, and judge email deliverability.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "password_reset_completed"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "token_age_seconds",
+                "sessions_revoked"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "token_age_seconds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Seconds between the link being issued and being used.",
+                  "x-pii": "none"
+                },
+                "sessions_revoked": {
+                  "type": "boolean",
+                  "description": "Whether sessions started before the reset were signed out (they always are).",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "password_reset_rejected": {
+      "title": "password_reset_rejected",
+      "description": "A reset link was refused (expired, already used, invalid or the account is unavailable).",
+      "x-class": "identified_opportunity",
+      "x-category": "authentication",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "daily",
+      "x-hypothesis": "why reset links fail, and whether the link lifetime is too short",
+      "x-decision": "lengthen or shorten the link lifetime, or make the 'request a new link' path easier to find",
+      "x-statement": "We capture password_reset_rejected because we need to know why reset links fail, and whether the link lifetime is too short, which allows us to make the decision lengthen or shorten the link lifetime, or make the 'request a new link' path easier to find.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "password_reset_rejected"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "rejection_reason"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "rejection_reason": {
+                  "type": "string",
+                  "enum": [
+                    "expired",
+                    "already_used_or_superseded",
+                    "invalid_token",
+                    "account_unavailable"
+                  ],
+                  "description": "Internal reason (never returned to the client, which always gets the same message).",
+                  "x-pii": "none"
+                },
+                "token_age_seconds": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "Seconds since the link was issued, when it could be read.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "password_changed": {
+      "title": "password_changed",
+      "description": "A signed-in user changed their own password.",
+      "x-class": "identified_opportunity",
+      "x-category": "authentication",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "daily",
+      "x-hypothesis": "how often people rotate their password on their own",
+      "x-decision": "decide whether to promote or enforce periodic password changes",
+      "x-statement": "We capture password_changed because we need to know how often people rotate their password on their own, which allows us to make the decision decide whether to promote or enforce periodic password changes.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "password_changed"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "user_role",
+                "sessions_revoked"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "user_role": {
+                  "type": "string",
+                  "enum": [
+                    "admin",
+                    "manager",
+                    "user"
+                  ],
+                  "description": "Role of the user.",
+                  "x-pii": "none"
+                },
+                "sessions_revoked": {
+                  "type": "boolean",
+                  "description": "Whether older sessions were signed out (they always are).",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "password_change_rejected": {
+      "title": "password_change_rejected",
+      "description": "A password change was refused: wrong current password, same password, or a new password that breaks the rules.",
+      "x-class": "identified_opportunity",
+      "x-category": "authentication",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "daily",
+      "x-hypothesis": "whether users struggle with the password rules, or someone with a stolen session is guessing the current password",
+      "x-decision": "improve the password hints in the form, and investigate accounts with many wrong current passwords",
+      "x-statement": "We capture password_change_rejected because we need to know whether users struggle with the password rules, or someone with a stolen session is guessing the current password, which allows us to make the decision improve the password hints in the form, and investigate accounts with many wrong current passwords.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "password_change_rejected"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "rejection_reason",
+                "attempts_in_window"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "rejection_reason": {
+                  "type": "string",
+                  "enum": [
+                    "wrong_current_password",
+                    "same_as_current",
+                    "invalid_new_password"
+                  ],
+                  "description": "Why the change was refused.",
+                  "x-pii": "none"
+                },
+                "attempts_in_window": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Refusals for this user in the last 15 minutes, including this one.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "access_denied": {
+      "title": "access_denied",
+      "description": "An authenticated user was refused access to something that is not theirs or that needs a higher role.",
+      "x-class": "identified_opportunity",
+      "x-category": "authentication",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "hourly",
+      "x-hypothesis": "whether users probe accounts or administrator functions they should not reach",
+      "x-decision": "review roles and permissions, and investigate users who keep trying",
+      "x-statement": "We capture access_denied because we need to know whether users probe accounts or administrator functions they should not reach, which allows us to make the decision review roles and permissions, and investigate users who keep trying.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "access_denied"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "denial_reason",
+                "resource",
+                "http_method",
+                "route_template",
+                "actor_role"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "denial_reason": {
+                  "type": "string",
+                  "enum": [
+                    "not_owner",
+                    "admin_required",
+                    "account_disabled"
+                  ],
+                  "description": "Why access was refused.",
+                  "x-pii": "none"
+                },
+                "resource": {
+                  "type": "string",
+                  "enum": [
+                    "users",
+                    "profiles",
+                    "inventory",
+                    "incidents",
+                    "incident_analysis",
+                    "other"
+                  ],
+                  "description": "Kind of resource the user tried to reach.",
+                  "x-pii": "none"
+                },
+                "http_method": {
+                  "type": "string",
+                  "enum": [
+                    "GET",
+                    "POST",
+                    "PUT",
+                    "PATCH",
+                    "DELETE"
+                  ],
+                  "description": "HTTP method of the request.",
+                  "x-pii": "none"
+                },
+                "route_template": {
+                  "type": "string",
+                  "pattern": "^/[A-Za-z0-9_{}./-]{0,119}$",
+                  "description": "Route with parameters replaced by their name, without query string, for example `/inventory/products/{sku_id}`.",
+                  "x-pii": "none"
+                },
+                "actor_role": {
+                  "type": "string",
+                  "enum": [
+                    "admin",
+                    "manager",
+                    "user"
+                  ],
+                  "description": "Role of the signed-in user who did the action (admin, manager or user).",
+                  "x-pii": "none"
+                },
+                "target_user_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^[0-9a-f-]{36}$",
+                  "description": "The account the user tried to reach, when the route has one.",
+                  "x-pii": "pseudonymized",
+                  "x-sanitization": "`user_id` path parameter."
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "user_role_changed": {
+      "title": "user_role_changed",
+      "description": "An administrator changed the role of an account.",
+      "x-class": "identified_opportunity",
+      "x-category": "authentication",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "daily",
+      "x-hypothesis": "who gains or loses privileges, and when",
+      "x-decision": "audit privileged access every quarter and spot unexpected promotions",
+      "x-statement": "We capture user_role_changed because we need to know who gains or loses privileges, and when, which allows us to make the decision audit privileged access every quarter and spot unexpected promotions.",
+      "x-pii": "pseudonymized",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "user_role_changed"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "target_user_id",
+                "previous_role",
+                "new_role"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "target_user_id": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f-]{36}$",
+                  "description": "The account whose role changed.",
+                  "x-pii": "pseudonymized",
+                  "x-sanitization": "`user_id` path parameter."
+                },
+                "previous_role": {
+                  "type": "string",
+                  "enum": [
+                    "admin",
+                    "manager",
+                    "user"
+                  ],
+                  "description": "Role before the change.",
+                  "x-pii": "none"
+                },
+                "new_role": {
+                  "type": "string",
+                  "enum": [
+                    "admin",
+                    "manager",
+                    "user"
+                  ],
+                  "description": "Role after the change.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "incident_created": {
+      "title": "incident_created",
+      "description": "An incident was registered in the incident manager.",
+      "x-class": "identified_opportunity",
+      "x-category": "incidents",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "hourly",
+      "x-hypothesis": "how many incidents are reported, by category, origin and branch",
+      "x-decision": "staff customer-experience coverage by branch and prioritise root-cause work on the most frequent categories (Valentina)",
+      "x-statement": "We capture incident_created because we need to know how many incidents are reported, by category, origin and branch, which allows us to make the decision staff customer-experience coverage by branch and prioritise root-cause work on the most frequent categories (Valentina).",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "incident_created"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "category",
+                "origin",
+                "branch",
+                "initial_status"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "lost_parcel",
+                    "delivery_failure",
+                    "inventory_discrepancy",
+                    "carrier_issue",
+                    "returns_issue",
+                    "warehouse_incident",
+                    "system_failure",
+                    "client_complaint",
+                    "other"
+                  ],
+                  "description": "Incident category.",
+                  "x-pii": "none"
+                },
+                "origin": {
+                  "type": "string",
+                  "enum": [
+                    "customer",
+                    "branch",
+                    "internal"
+                  ],
+                  "description": "Where the report came from.",
+                  "x-pii": "none"
+                },
+                "branch": {
+                  "type": "string",
+                  "enum": [
+                    "central",
+                    "la_warehouse",
+                    "la_office",
+                    "zaragoza_warehouse",
+                    "zaragoza_office"
+                  ],
+                  "description": "Branch the incident belongs to.",
+                  "x-pii": "none"
+                },
+                "initial_status": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "in_progress",
+                    "resolved",
+                    "discarded"
+                  ],
+                  "description": "Status at creation.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "incident_status_changed": {
+      "title": "incident_status_changed",
+      "description": "An incident moved to another status.",
+      "x-class": "identified_opportunity",
+      "x-category": "incidents",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "hourly",
+      "x-hypothesis": "how long incidents take to move through their lifecycle and where they stall",
+      "x-decision": "escalate or rebalance staffing when the time to resolve grows (Valentina)",
+      "x-statement": "We capture incident_status_changed because we need to know how long incidents take to move through their lifecycle and where they stall, which allows us to make the decision escalate or rebalance staffing when the time to resolve grows (Valentina).",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "incident_status_changed"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "incident_id",
+                "from_status",
+                "to_status",
+                "incident_age_seconds",
+                "category",
+                "branch"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "incident_id": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Numeric id of the incident.",
+                  "x-pii": "none"
+                },
+                "from_status": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "in_progress",
+                    "resolved",
+                    "discarded"
+                  ],
+                  "description": "Status before.",
+                  "x-pii": "none"
+                },
+                "to_status": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "in_progress",
+                    "resolved",
+                    "discarded"
+                  ],
+                  "description": "Status after.",
+                  "x-pii": "none"
+                },
+                "incident_age_seconds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Seconds since the incident was created.",
+                  "x-pii": "none"
+                },
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "lost_parcel",
+                    "delivery_failure",
+                    "inventory_discrepancy",
+                    "carrier_issue",
+                    "returns_issue",
+                    "warehouse_incident",
+                    "system_failure",
+                    "client_complaint",
+                    "other"
+                  ],
+                  "description": "Incident category.",
+                  "x-pii": "none"
+                },
+                "branch": {
+                  "type": "string",
+                  "enum": [
+                    "central",
+                    "la_warehouse",
+                    "la_office",
+                    "zaragoza_warehouse",
+                    "zaragoza_office"
+                  ],
+                  "description": "Branch of the incident.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "incident_file_analyzed": {
+      "title": "incident_file_analyzed",
+      "description": "The helpdesk incident export went through the analysis.",
+      "x-class": "identified_opportunity",
+      "x-category": "incidents",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "daily",
+      "x-hypothesis": "how often the helpdesk export is analysed, how clean it is, and how satisfaction evolves",
+      "x-decision": "agree data-quality fixes with the team that owns the helpdesk export, and track the satisfaction trend (Valentina)",
+      "x-statement": "We capture incident_file_analyzed because we need to know how often the helpdesk export is analysed, how clean it is, and how satisfaction evolves, which allows us to make the decision agree data-quality fixes with the team that owns the helpdesk export, and track the satisfaction trend (Valentina).",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "incident_file_analyzed"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "total_records",
+                "valid_records",
+                "invalid_records",
+                "invalid_by_rule",
+                "average_satisfaction",
+                "duration_ms",
+                "file_size_bytes"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "total_records": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Records in the file.",
+                  "x-pii": "none"
+                },
+                "valid_records": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Records that passed every rule.",
+                  "x-pii": "none"
+                },
+                "invalid_records": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Records that broke at least one rule.",
+                  "x-pii": "none"
+                },
+                "invalid_by_rule": {
+                  "type": "object",
+                  "properties": {
+                    "invalid_tracking_number": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "invalid_carrier": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "invalid_category": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "invalid_email": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "closed_without_score": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "invalid_country": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "invalid_description": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "score_out_of_range": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "invalid_status": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "missing_required_field": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "Count of records per broken rule. A record can appear under several rules.",
+                  "x-pii": "none"
+                },
+                "average_satisfaction": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 1,
+                  "maximum": 5,
+                  "description": "Average satisfaction score of valid closed incidents, or null when there are none.",
+                  "x-pii": "none"
+                },
+                "duration_ms": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Time the analysis took.",
+                  "x-pii": "none"
+                },
+                "file_size_bytes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Size of the uploaded file.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "incident_file_rejected": {
+      "title": "incident_file_rejected",
+      "description": "An uploaded incident file could not be analysed.",
+      "x-class": "identified_opportunity",
+      "x-category": "incidents",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "daily",
+      "x-hypothesis": "why uploads fail, and whether the size limit or the export instructions are the problem",
+      "x-decision": "improve the export instructions, or raise the upload limit if large files are the cause",
+      "x-statement": "We capture incident_file_rejected because we need to know why uploads fail, and whether the size limit or the export instructions are the problem, which allows us to make the decision improve the export instructions, or raise the upload limit if large files are the cause.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "incident_file_rejected"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "rejection_reason",
+                "http_status"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "rejection_reason": {
+                  "type": "string",
+                  "enum": [
+                    "empty_file",
+                    "no_file",
+                    "not_csv",
+                    "too_large",
+                    "not_multipart",
+                    "invalid_encoding",
+                    "missing_columns",
+                    "no_data_rows",
+                    "malformed_csv"
+                  ],
+                  "description": "Why the file was refused.",
+                  "x-pii": "none"
+                },
+                "http_status": {
+                  "type": "integer",
+                  "minimum": 400,
+                  "maximum": 499,
+                  "description": "HTTP status returned.",
+                  "x-pii": "none"
+                },
+                "file_size_bytes": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "Size of the file, when it was received.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "page_viewed": {
+      "title": "page_viewed",
+      "description": "A screen of the backoffice was shown.",
+      "x-class": "identified_opportunity",
+      "x-category": "navigation",
+      "x-source": [
+        "frontend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "hourly",
+      "x-hypothesis": "which sections operators actually use, and in what order",
+      "x-decision": "reorder the menu, retire sections nobody opens, and put engineering time into the most visited screens",
+      "x-statement": "We capture page_viewed because we need to know which sections operators actually use, and in what order, which allows us to make the decision reorder the menu, retire sections nobody opens, and put engineering time into the most visited screens.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "page_viewed"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "section",
+                "route_template",
+                "referrer_section",
+                "device_class",
+                "is_authenticated"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "section": {
+                  "type": "string",
+                  "enum": [
+                    "overview",
+                    "inventory_products",
+                    "inventory_inbound_order",
+                    "inventory_outbound_order",
+                    "inventory_order_history",
+                    "incidents_list",
+                    "incidents_new",
+                    "incidents_file_analysis",
+                    "account_profile",
+                    "account_change_password",
+                    "auth_login",
+                    "auth_register",
+                    "auth_forgot_password",
+                    "auth_reset_password",
+                    "other"
+                  ],
+                  "description": "Section of the backoffice.",
+                  "x-pii": "none"
+                },
+                "route_template": {
+                  "type": "string",
+                  "pattern": "^/[A-Za-z0-9_{}./-]{0,119}$",
+                  "description": "Next.js route pattern, without query string.",
+                  "x-pii": "none"
+                },
+                "referrer_section": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "overview",
+                    "inventory_products",
+                    "inventory_inbound_order",
+                    "inventory_outbound_order",
+                    "inventory_order_history",
+                    "incidents_list",
+                    "incidents_new",
+                    "incidents_file_analysis",
+                    "account_profile",
+                    "account_change_password",
+                    "auth_login",
+                    "auth_register",
+                    "auth_forgot_password",
+                    "auth_reset_password",
+                    "other",
+                    "external",
+                    null
+                  ],
+                  "description": "Section the user came from, `external` for another site, or null for a direct visit.",
+                  "x-pii": "none"
+                },
+                "device_class": {
+                  "type": "string",
+                  "enum": [
+                    "desktop",
+                    "tablet",
+                    "mobile"
+                  ],
+                  "description": "Kind of device.",
+                  "x-pii": "none"
+                },
+                "is_authenticated": {
+                  "type": "boolean",
+                  "description": "Whether the user was signed in.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "flow_started": {
+      "title": "flow_started",
+      "description": "A user began a guided task (an order, an incident report, a registration).",
+      "x-class": "identified_opportunity",
+      "x-category": "navigation",
+      "x-source": [
+        "frontend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "hourly",
+      "x-hypothesis": "how many times each guided task is started; this is the denominator of the abandonment rate",
+      "x-decision": "choose which flow to simplify first",
+      "x-statement": "We capture flow_started because we need to know how many times each guided task is started; this is the denominator of the abandonment rate, which allows us to make the decision choose which flow to simplify first.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "flow_started"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "flow_name",
+                "entry_section"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "flow_name": {
+                  "type": "string",
+                  "enum": [
+                    "inbound_order",
+                    "outbound_order",
+                    "incident_report",
+                    "incident_file_analysis",
+                    "registration",
+                    "password_reset",
+                    "password_change"
+                  ],
+                  "description": "Which guided task.",
+                  "x-pii": "none"
+                },
+                "entry_section": {
+                  "type": "string",
+                  "enum": [
+                    "overview",
+                    "inventory_products",
+                    "inventory_inbound_order",
+                    "inventory_outbound_order",
+                    "inventory_order_history",
+                    "incidents_list",
+                    "incidents_new",
+                    "incidents_file_analysis",
+                    "account_profile",
+                    "account_change_password",
+                    "auth_login",
+                    "auth_register",
+                    "auth_forgot_password",
+                    "auth_reset_password",
+                    "other"
+                  ],
+                  "description": "Section where the flow was opened.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "flow_abandoned": {
+      "title": "flow_abandoned",
+      "description": "A user started a guided task and left without finishing it.",
+      "x-class": "identified_opportunity",
+      "x-category": "navigation",
+      "x-source": [
+        "frontend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "hourly",
+      "x-hypothesis": "which flows are left unfinished and at which step",
+      "x-decision": "redesign the step where people drop out",
+      "x-statement": "We capture flow_abandoned because we need to know which flows are left unfinished and at which step, which allows us to make the decision redesign the step where people drop out.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "flow_abandoned"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "flow_name",
+                "last_step",
+                "elapsed_seconds",
+                "fields_touched"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "flow_name": {
+                  "type": "string",
+                  "enum": [
+                    "inbound_order",
+                    "outbound_order",
+                    "incident_report",
+                    "incident_file_analysis",
+                    "registration",
+                    "password_reset",
+                    "password_change"
+                  ],
+                  "description": "Which guided task.",
+                  "x-pii": "none"
+                },
+                "last_step": {
+                  "type": "string",
+                  "enum": [
+                    "form_opened",
+                    "field_edited",
+                    "validation_failed",
+                    "submit_failed"
+                  ],
+                  "description": "Last thing the user did before leaving.",
+                  "x-pii": "none"
+                },
+                "elapsed_seconds": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 86400,
+                  "description": "Seconds between starting and leaving.",
+                  "x-pii": "none"
+                },
+                "fields_touched": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 50,
+                  "description": "How many fields the user edited.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "filter_applied": {
+      "title": "filter_applied",
+      "description": "A user filtered the incident list.",
+      "x-class": "identified_opportunity",
+      "x-category": "navigation",
+      "x-source": [
+        "frontend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "daily",
+      "x-hypothesis": "which filters operators use and how narrow the results get",
+      "x-decision": "set sensible default filters and add saved views for the most common ones",
+      "x-statement": "We capture filter_applied because we need to know which filters operators use and how narrow the results get, which allows us to make the decision set sensible default filters and add saved views for the most common ones.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "filter_applied"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "surface",
+                "filters_active",
+                "result_count"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "surface": {
+                  "type": "string",
+                  "enum": [
+                    "incident_list"
+                  ],
+                  "description": "Where the filter was used.",
+                  "x-pii": "none"
+                },
+                "filters_active": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "status",
+                      "origin",
+                      "branch",
+                      "category"
+                    ]
+                  },
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "description": "Which filters are set after the change.",
+                  "x-pii": "none"
+                },
+                "result_count": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "How many incidents match.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "form_validation_failed": {
+      "title": "form_validation_failed",
+      "description": "A form showed validation errors after a submit.",
+      "x-class": "identified_opportunity",
+      "x-category": "navigation",
+      "x-source": [
+        "frontend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "daily",
+      "x-hypothesis": "which fields cause the most mistakes",
+      "x-decision": "reword labels, add hints, or relax constraints on those fields",
+      "x-statement": "We capture form_validation_failed because we need to know which fields cause the most mistakes, which allows us to make the decision reword labels, add hints, or relax constraints on those fields.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "form_validation_failed"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "form_name",
+                "field_names",
+                "error_count",
+                "attempt_number"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "form_name": {
+                  "type": "string",
+                  "enum": [
+                    "inbound_order",
+                    "outbound_order",
+                    "incident_report",
+                    "registration",
+                    "login",
+                    "password_reset_request",
+                    "password_reset",
+                    "password_change",
+                    "profile_edit"
+                  ],
+                  "description": "Which form.",
+                  "x-pii": "none"
+                },
+                "field_names": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "email",
+                      "password",
+                      "name",
+                      "phone",
+                      "address",
+                      "product",
+                      "quantity",
+                      "reference",
+                      "exit_type",
+                      "tracking_number",
+                      "title",
+                      "description",
+                      "category",
+                      "origin",
+                      "branch",
+                      "status",
+                      "current_password",
+                      "new_password",
+                      "confirm_password"
+                    ]
+                  },
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "description": "Fields that showed an error.",
+                  "x-pii": "none"
+                },
+                "error_count": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 50,
+                  "description": "Number of errors shown.",
+                  "x-pii": "none"
+                },
+                "attempt_number": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 50,
+                  "description": "How many times the user has submitted this form visit, starting at 1.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "api_latency_recorded": {
+      "title": "api_latency_recorded",
+      "description": "The time one API request took, with its route and result.",
+      "x-class": "identified_opportunity",
+      "x-category": "performance",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "stream",
+      "x-delivery-window": "within 60 seconds",
+      "x-hypothesis": "whether the API slows down during shifts and which routes are slow",
+      "x-decision": "optimise or scale the slow routes, and escalate when the 95th percentile breaches the target",
+      "x-statement": "We capture api_latency_recorded because we need to know whether the API slows down during shifts and which routes are slow, which allows us to make the decision optimise or scale the slow routes, and escalate when the 95th percentile breaches the target.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "api_latency_recorded"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "method",
+                "route_template",
+                "status_code",
+                "duration_ms",
+                "sample_rate",
+                "is_slow"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "method": {
+                  "type": "string",
+                  "enum": [
+                    "GET",
+                    "POST",
+                    "PUT",
+                    "PATCH",
+                    "DELETE"
+                  ],
+                  "description": "HTTP method.",
+                  "x-pii": "none"
+                },
+                "route_template": {
+                  "type": "string",
+                  "pattern": "^/[A-Za-z0-9_{}./-]{0,119}$",
+                  "description": "Route with parameters replaced by their name, without query string, for example `/inventory/products/{sku_id}`.",
+                  "x-pii": "none"
+                },
+                "status_code": {
+                  "type": "integer",
+                  "minimum": 100,
+                  "maximum": 599,
+                  "description": "HTTP status of the response.",
+                  "x-pii": "none"
+                },
+                "duration_ms": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Time from receiving the request to sending the response.",
+                  "x-pii": "none"
+                },
+                "sample_rate": {
+                  "type": "number",
+                  "maximum": 1,
+                  "exclusiveMinimum": 0,
+                  "description": "Share of events of this kind that are emitted: 1 when always emitted, 0.1 when sampled one in ten.",
+                  "x-pii": "none"
+                },
+                "is_slow": {
+                  "type": "boolean",
+                  "description": "Whether the request was above the slow threshold.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "page_load_recorded": {
+      "title": "page_load_recorded",
+      "description": "How fast a screen loaded for the user, with the standard web performance measures.",
+      "x-class": "identified_opportunity",
+      "x-category": "performance",
+      "x-source": [
+        "frontend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "hourly",
+      "x-hypothesis": "how fast pages load on the devices and connections used in each warehouse",
+      "x-decision": "prioritise frontend optimisation, and decide whether warehouse tablets on slow connections need a lighter interface",
+      "x-statement": "We capture page_load_recorded because we need to know how fast pages load on the devices and connections used in each warehouse, which allows us to make the decision prioritise frontend optimisation, and decide whether warehouse tablets on slow connections need a lighter interface.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "page_load_recorded"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "route_template",
+                "section",
+                "navigation_type",
+                "device_class",
+                "connection_type"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "route_template": {
+                  "type": "string",
+                  "pattern": "^/[A-Za-z0-9_{}./-]{0,119}$",
+                  "description": "Next.js route pattern.",
+                  "x-pii": "none"
+                },
+                "section": {
+                  "type": "string",
+                  "enum": [
+                    "overview",
+                    "inventory_products",
+                    "inventory_inbound_order",
+                    "inventory_outbound_order",
+                    "inventory_order_history",
+                    "incidents_list",
+                    "incidents_new",
+                    "incidents_file_analysis",
+                    "account_profile",
+                    "account_change_password",
+                    "auth_login",
+                    "auth_register",
+                    "auth_forgot_password",
+                    "auth_reset_password",
+                    "other"
+                  ],
+                  "description": "Section of the backoffice.",
+                  "x-pii": "none"
+                },
+                "navigation_type": {
+                  "type": "string",
+                  "enum": [
+                    "initial",
+                    "spa"
+                  ],
+                  "description": "`initial` for a full page load, `spa` for an in-app navigation.",
+                  "x-pii": "none"
+                },
+                "ttfb_ms": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "Time to first byte.",
+                  "x-pii": "none"
+                },
+                "fcp_ms": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "First contentful paint.",
+                  "x-pii": "none"
+                },
+                "lcp_ms": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "Largest contentful paint.",
+                  "x-pii": "none"
+                },
+                "cls": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "Cumulative layout shift.",
+                  "x-pii": "none"
+                },
+                "inp_ms": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "Interaction to next paint, when the user interacted.",
+                  "x-pii": "none"
+                },
+                "device_class": {
+                  "type": "string",
+                  "enum": [
+                    "desktop",
+                    "tablet",
+                    "mobile"
+                  ],
+                  "description": "Kind of device.",
+                  "x-pii": "none"
+                },
+                "connection_type": {
+                  "type": "string",
+                  "enum": [
+                    "4g",
+                    "3g",
+                    "2g",
+                    "slow-2g",
+                    "unknown"
+                  ],
+                  "description": "Effective connection type reported by the browser.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "query_slow_detected": {
+      "title": "query_slow_detected",
+      "description": "A database statement took longer than the threshold.",
+      "x-class": "identified_opportunity",
+      "x-category": "performance",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "daily",
+      "x-hypothesis": "which statements dominate response time (the list endpoints run several queries per row today)",
+      "x-decision": "add indexes, pagination or joins to the worst offenders",
+      "x-statement": "We capture query_slow_detected because we need to know which statements dominate response time (the list endpoints run several queries per row today), which allows us to make the decision add indexes, pagination or joins to the worst offenders.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "query_slow_detected"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "operation",
+                "table",
+                "duration_ms",
+                "statement_fingerprint",
+                "route_template",
+                "query_count_in_request"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "operation": {
+                  "type": "string",
+                  "enum": [
+                    "select",
+                    "insert",
+                    "update",
+                    "delete",
+                    "other"
+                  ],
+                  "description": "Kind of statement.",
+                  "x-pii": "none"
+                },
+                "table": {
+                  "type": "string",
+                  "pattern": "^[a-z_]{1,40}$",
+                  "description": "Main table involved.",
+                  "x-pii": "none"
+                },
+                "duration_ms": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Time the statement took.",
+                  "x-pii": "none"
+                },
+                "statement_fingerprint": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$",
+                  "description": "Hash of the statement with values removed, to group repeats.",
+                  "x-pii": "none"
+                },
+                "route_template": {
+                  "type": "string",
+                  "pattern": "^/[A-Za-z0-9_{}./-]{0,119}$",
+                  "description": "Route being served when the statement ran.",
+                  "x-pii": "none"
+                },
+                "query_count_in_request": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "How many statements the request had run when this one finished.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "frontend_error_caught": {
+      "title": "frontend_error_caught",
+      "description": "An unexpected error was intercepted in the browser.",
+      "x-class": "identified_opportunity",
+      "x-category": "errors",
+      "x-source": [
+        "frontend"
+      ],
+      "x-delivery": "stream",
+      "x-delivery-window": "within 60 seconds",
+      "x-hypothesis": "whether a release introduced errors, and which screens crash",
+      "x-decision": "roll back or hotfix, and prioritise the screens that crash most",
+      "x-statement": "We capture frontend_error_caught because we need to know whether a release introduced errors, and which screens crash, which allows us to make the decision roll back or hotfix, and prioritise the screens that crash most.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "frontend_error_caught"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "error_source",
+                "error_name",
+                "error_fingerprint",
+                "route_template",
+                "occurrences",
+                "handled_by_boundary"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "error_source": {
+                  "type": "string",
+                  "enum": [
+                    "window_error",
+                    "unhandled_rejection",
+                    "react_error_boundary"
+                  ],
+                  "description": "Where the error was intercepted.",
+                  "x-pii": "none"
+                },
+                "error_name": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_$.]{1,80}$",
+                  "description": "Class of the error, for example `TypeError`.",
+                  "x-pii": "none"
+                },
+                "error_fingerprint": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{16}$",
+                  "description": "Hash of the normalised stack, to group the same error.",
+                  "x-pii": "none"
+                },
+                "route_template": {
+                  "type": "string",
+                  "pattern": "^/[A-Za-z0-9_{}./-]{0,119}$",
+                  "description": "Route where it happened.",
+                  "x-pii": "none"
+                },
+                "occurrences": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "How many identical errors this event stands for.",
+                  "x-pii": "none"
+                },
+                "handled_by_boundary": {
+                  "type": "boolean",
+                  "description": "Whether a React error boundary showed the fallback screen.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "api_error_returned": {
+      "title": "api_error_returned",
+      "description": "The API answered with a server error.",
+      "x-class": "identified_opportunity",
+      "x-category": "errors",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "stream",
+      "x-delivery-window": "within 60 seconds",
+      "x-hypothesis": "how often and where the API fails with server errors",
+      "x-decision": "page the engineer on duty and open an incident for the failing route",
+      "x-statement": "We capture api_error_returned because we need to know how often and where the API fails with server errors, which allows us to make the decision page the engineer on duty and open an incident for the failing route.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "api_error_returned"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "method",
+                "route_template",
+                "status_code",
+                "error_code",
+                "duration_ms"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "method": {
+                  "type": "string",
+                  "enum": [
+                    "GET",
+                    "POST",
+                    "PUT",
+                    "PATCH",
+                    "DELETE"
+                  ],
+                  "description": "HTTP method.",
+                  "x-pii": "none"
+                },
+                "route_template": {
+                  "type": "string",
+                  "pattern": "^/[A-Za-z0-9_{}./-]{0,119}$",
+                  "description": "Route with parameters replaced by their name, without query string, for example `/inventory/products/{sku_id}`.",
+                  "x-pii": "none"
+                },
+                "status_code": {
+                  "type": "integer",
+                  "minimum": 500,
+                  "maximum": 599,
+                  "description": "HTTP status returned.",
+                  "x-pii": "none"
+                },
+                "error_code": {
+                  "type": "string",
+                  "enum": [
+                    "internal_error",
+                    "service_unavailable",
+                    "database_unavailable",
+                    "account_store_unavailable"
+                  ],
+                  "description": "Internal error class.",
+                  "x-pii": "none"
+                },
+                "exception_type": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "pattern": "^[A-Za-z0-9_.]{1,100}$",
+                  "description": "Class name of the exception, if there was one.",
+                  "x-pii": "none"
+                },
+                "duration_ms": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Time until the error response.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "network_request_failed": {
+      "title": "network_request_failed",
+      "description": "A call from the browser to the API did not get an answer.",
+      "x-class": "identified_opportunity",
+      "x-category": "errors",
+      "x-source": [
+        "frontend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "hourly",
+      "x-hypothesis": "whether operators lose connectivity, and at which times",
+      "x-decision": "invest in the network at the affected warehouse, and add an offline queue for orders if it is frequent",
+      "x-statement": "We capture network_request_failed because we need to know whether operators lose connectivity, and at which times, which allows us to make the decision invest in the network at the affected warehouse, and add an offline queue for orders if it is frequent.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "network_request_failed"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "route_template",
+                "failure_kind",
+                "duration_ms",
+                "occurrences",
+                "online"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "route_template": {
+                  "type": "string",
+                  "pattern": "^/[A-Za-z0-9_{}./-]{0,119}$",
+                  "description": "Route with parameters replaced by their name, without query string, for example `/inventory/products/{sku_id}`.",
+                  "x-pii": "none"
+                },
+                "failure_kind": {
+                  "type": "string",
+                  "enum": [
+                    "unreachable",
+                    "timeout"
+                  ],
+                  "description": "What went wrong.",
+                  "x-pii": "none"
+                },
+                "duration_ms": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Time spent before giving up.",
+                  "x-pii": "none"
+                },
+                "occurrences": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "How many identical failures this event stands for.",
+                  "x-pii": "none"
+                },
+                "online": {
+                  "type": "boolean",
+                  "description": "Whether the browser reported being online.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "email_delivery_failed": {
+      "title": "email_delivery_failed",
+      "description": "An email (a password-reset link) could not be sent.",
+      "x-class": "identified_opportunity",
+      "x-category": "errors",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "stream",
+      "x-delivery-window": "within 60 seconds",
+      "x-hypothesis": "whether password-reset emails are failing to leave the system",
+      "x-decision": "fix the provider key or its configuration, or switch provider, before people are locked out",
+      "x-statement": "We capture email_delivery_failed because we need to know whether password-reset emails are failing to leave the system, which allows us to make the decision fix the provider key or its configuration, or switch provider, before people are locked out.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "email_delivery_failed"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "message_type",
+                "provider",
+                "failure_kind"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "message_type": {
+                  "type": "string",
+                  "enum": [
+                    "password_reset"
+                  ],
+                  "description": "Kind of email.",
+                  "x-pii": "none"
+                },
+                "provider": {
+                  "type": "string",
+                  "enum": [
+                    "resend",
+                    "console",
+                    "disabled"
+                  ],
+                  "description": "Email provider in use.",
+                  "x-pii": "none"
+                },
+                "failure_kind": {
+                  "type": "string",
+                  "enum": [
+                    "provider_http_error",
+                    "network_error",
+                    "not_configured"
+                  ],
+                  "description": "What went wrong.",
+                  "x-pii": "none"
+                },
+                "http_status": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 100,
+                  "maximum": 599,
+                  "description": "Status returned by the provider, when there was one.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "service_started": {
+      "title": "service_started",
+      "description": "A service of the platform started.",
+      "x-class": "identified_opportunity",
+      "x-category": "errors",
+      "x-source": [
+        "backend"
+      ],
+      "x-delivery": "stream",
+      "x-delivery-window": "within 60 seconds",
+      "x-hypothesis": "how often services restart and with which configuration",
+      "x-decision": "detect crash loops and configuration drift between environments",
+      "x-statement": "We capture service_started because we need to know how often services restart and with which configuration, which allows us to make the decision detect crash loops and configuration drift between environments.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "service_started"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "service",
+                "startup_duration_ms",
+                "reload_enabled"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "service": {
+                  "type": "string",
+                  "enum": [
+                    "api",
+                    "ui_website",
+                    "ui_backoffice"
+                  ],
+                  "description": "Which service started.",
+                  "x-pii": "none"
+                },
+                "startup_duration_ms": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Time from process start to ready.",
+                  "x-pii": "none"
+                },
+                "database_kind": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "postgresql",
+                    "sqlite",
+                    null
+                  ],
+                  "description": "Kind of database the API connected to.",
+                  "x-pii": "none"
+                },
+                "email_provider": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "resend",
+                    "console",
+                    "disabled",
+                    null
+                  ],
+                  "description": "Email provider configured.",
+                  "x-pii": "none"
+                },
+                "reload_enabled": {
+                  "type": "boolean",
+                  "description": "Whether the process runs with hot reload (development).",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
