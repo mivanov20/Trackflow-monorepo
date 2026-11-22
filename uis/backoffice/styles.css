@@ -416,3 +416,4 @@ td .status + .small-button { margin-left: 10px; }
 .profile-summary { display: grid; gap: 4px; margin: 0 0 18px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 6px; background: #fbfcfa; }
 .profile-summary dt { color: #839087; font: 500 9px var(--mono); text-transform: uppercase; }
 .profile-summary dd { margin: 0 0 8px; overflow-wrap: anywhere; font-size: 13px; }
+.auth-forgot { margin: 2px 0 0; font-size: 11px; }
