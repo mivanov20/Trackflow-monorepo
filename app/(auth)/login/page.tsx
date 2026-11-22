@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [expired, setExpired] = useState(false);
+  const [resetDone, setResetDone] = useState(false);
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -19,7 +20,9 @@ export default function LoginPage() {
   // La query se lee tras montar (no durante el render) para no desajustar la hidratación.
   useEffect(() => {
     setSearch(window.location.search);
-    setExpired(new URLSearchParams(window.location.search).get("reason") === "expired");
+    const params = new URLSearchParams(window.location.search);
+    setExpired(params.get("reason") === "expired");
+    setResetDone(params.get("reset") === "success");
   }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -46,7 +49,8 @@ export default function LoginPage() {
       </section>
       <section className="list-panel auth-panel" aria-labelledby="login-heading">
         <h2 id="login-heading" className="visually-hidden">Sign in form</h2>
-        {expired && !error ? <p className="inline-error auth-notice" role="status">Your session has expired. Please sign in again.</p> : null}
+        {resetDone && !error ? <p className="success-state auth-notice" role="status">Your password was updated. Sign in with your new password.</p> : null}
+        {expired && !resetDone && !error ? <p className="inline-error auth-notice" role="status">Your session has expired. Please sign in again.</p> : null}
         <form className="candidate-form auth-form" onSubmit={submit} aria-busy={busy}>
           <label>
             <span>Email</span>
@@ -56,6 +60,9 @@ export default function LoginPage() {
             <span>Password</span>
             <input type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} />
           </label>
+          <p className="auth-links auth-forgot">
+            <Link href="/forgot-password">Forgot your password?</Link>
+          </p>
           {error ? <p className="error-state" role="alert">{error}</p> : null}
           <button type="submit" disabled={busy}>
             {busy ? "Signing in..." : "Sign in"}

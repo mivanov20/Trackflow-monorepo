@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { ApiError, authErrorMessage, fetchAccount, saveUser, toSessionUser, updateMyProfile, type Account } from "../../../../lib/auth";
 
@@ -105,6 +106,9 @@ export default function ProfilePage() {
         <p className="eyebrow">Account</p>
         <h1>My account</h1>
         <p className="lede">Your sign-in email comes from your account. Name and contact details come from your profile.</p>
+        <p className="auth-links">
+          <Link href="/account/change-password">Change password</Link>
+        </p>
       </section>
 
       {state === "loading" ? <p className="empty-state" role="status">Loading your account...</p> : null}
