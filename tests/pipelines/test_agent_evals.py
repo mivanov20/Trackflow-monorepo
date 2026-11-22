@@ -182,9 +182,10 @@ def test_eval_6_a_failure_is_in_the_trace_and_the_run_resumes_from_its_checkpoin
 
 
 # ================================================================== the state is minimal and explicit
-def test_the_state_is_six_explicit_fields_and_carries_no_history():
-    # part 1 had four; part 2 adds `plan` (what the planner decided) and `live_data` (what the tools returned): each one is read by a later node
-    assert set(AgentState.__annotations__) == {"question", "plan", "live_data", "context", "answer", "outcome"}
+def test_the_state_is_explicit_and_carries_no_conversation_history():
+    # part 1 had four fields; part 2 added `plan` and `live_data`; the memory milestone adds the ones of its own step (tests/pipelines/test_agent_memory.py): each one is read by a later node
+    memory_fields = {"conversation_id", "actor", "memory_decision", "memory_notice", "memory_candidate", "memory_proposal", "memories_used"}
+    assert set(AgentState.__annotations__) == {"question", "plan", "live_data", "context", "answer", "outcome"} | memory_fields
     assert not {"messages", "history", "conversation"} & set(AgentState.__annotations__)
 
 

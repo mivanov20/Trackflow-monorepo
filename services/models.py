@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import DDL, CheckConstraint, Column, Date, DateTime, Index, Integer, JSON, Numeric, Text, Uuid, event, text
+from sqlalchemy import DDL, CheckConstraint, Column, Date, DateTime, Float, Index, Integer, JSON, Numeric, Text, Uuid, event, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 from trackflow_shared.incidents import BRANCHES, CATEGORIES, ORIGINS, STATUSES
@@ -219,3 +219,69 @@ class AgentTraceStep(SQLModel, table=True):
     input: dict = Field(default_factory=dict, sa_column=Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False, server_default=text("'{}'")))
     output: dict = Field(default_factory=dict, sa_column=Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False, server_default=text("'{}'")))
     error: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+
+
+class AgentMemoryEntry(SQLModel, table=True):
+    """What the support agent remembers: facts a user approved (carrier rules, recurring incident context, client report preferences).
+
+    Not a RAG collection and not part of the company knowledge base: this is the agent's own store, written only after an explicit, logged
+    user decision. Entries are consolidated by scope (carrier + country, or client) and expire; a superseded, expired or forgotten entry stays
+    for a while for traceability and is then purged. The record of who approved what lives in `agent_memory_proposals`, which is never purged.
+    """
+
+    __tablename__ = "agent_memory_entries"
+    __table_args__ = (Index("ix_agent_memory_entries_scope_key", "scope_key"), Index("ix_agent_memory_entries_status", "status"))
+
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=Column(Uuid, primary_key=True, server_default=text("gen_random_uuid()") if _POSTGRES else None),
+    )
+    kind: str = Field(sa_column=Column(Text, nullable=False))  # carrier_rule | incident_context | client_preference
+    scope_key: str = Field(sa_column=Column(Text, nullable=False))  # carrier:seur|country:ES, client:cosmetics-co, incident:ES:zaragoza-catalonia
+    carrier: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    country: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # US | ES
+    client: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    topic: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    content: str = Field(sa_column=Column(Text, nullable=False))
+    status: str = Field(default="active", sa_column=Column(Text, nullable=False))  # active | superseded | expired | forgotten
+    confirmations: int = Field(default=1, sa_column=Column(Integer, nullable=False))
+    uses: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+    created_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
+    updated_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
+    last_used_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    expires_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    source_proposal_ids: list = Field(default_factory=list, sa_column=Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False, server_default=text("'[]'")))
+
+
+class AgentMemoryProposal(SQLModel, table=True):
+    """The audit log of the agent's memory: every proposal, its outcome, who decided and when, whether it was approved or not.
+
+    Rows are never deleted by the cleanup. At most ONE proposal per conversation is `pending` (a partial unique index enforces it). Text that
+    could be sensitive (addresses, tracking numbers, contact data) is redacted before it is stored here.
+    """
+
+    __tablename__ = "agent_memory_proposals"
+    __table_args__ = (
+        Index("ix_agent_memory_proposals_conversation_id", "conversation_id"),
+        Index("one_pending_proposal_per_conversation", "conversation_id", unique=True, postgresql_where=text("status = 'pending'"), sqlite_where=text("status = 'pending'")),
+    )
+
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=Column(Uuid, primary_key=True, server_default=text("gen_random_uuid()") if _POSTGRES else None),
+    )
+    conversation_id: str = Field(sa_column=Column(Text, nullable=False))
+    actor: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # the signed-in user the proposal was shown to
+    origin_message: str = Field(default="", sa_column=Column(Text, nullable=False))  # the user message that led to it (redacted)
+    proposal: dict = Field(default_factory=dict, sa_column=Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False, server_default=text("'{}'")))
+    status: str = Field(sa_column=Column(Text, nullable=False))  # pending | approved | edited | rejected | discarded_topic_change | discarded_unclear | rejected_by_policy | blocked_by_policy
+    proposed_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
+    resolved_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    decision_label: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # approve | reject | edit | unrelated | unclear
+    decision_confidence: float | None = Field(default=None, sa_column=Column(Float, nullable=True))
+    decision_method: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # rules | model | none
+    decision_message: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # the user message that decided it (redacted)
+    decided_by: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # the user who authorised (or refused) it
+    final_content: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # what was written, if anything
+    entry_id: uuid.UUID | None = Field(default=None, sa_column=Column(Uuid, nullable=True))
+    note: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
