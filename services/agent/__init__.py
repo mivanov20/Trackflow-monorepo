@@ -1,5 +1,6 @@
 """The TrackFlow support agent: the RAG pipeline as an explicit, compiled, checkpointed and traced LangGraph graph."""
 
+from . import guardrails  # noqa: F401  (registers the external-content isolation filter)
 from .graph import AgentBuildError
 from .runner import AgentResult, checkpoints, get_graph, resume, run_agent, run_trace, validate_agent
 

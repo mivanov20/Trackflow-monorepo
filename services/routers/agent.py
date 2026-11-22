@@ -6,6 +6,7 @@ It coexists with `POST /knowledge/query` (the plain RAG endpoint). A failure in 
 """
 
 import logging
+from datetime import datetime
 import uuid
 from typing import Any
 
@@ -13,6 +14,8 @@ from fastapi import APIRouter, Depends, HTTPException, Path, status
 from pydantic import BaseModel, Field
 
 from .. import agent
+from ..agent.guardrails import events as guardrail_events
+from ..agent.guardrails.session import SessionContext
 from ..agent.trace import sources_used
 from ..accounts import User
 from ..auth import get_current_user
@@ -38,6 +41,8 @@ class AgentAnswer(BaseModel):
     run_id: str
     sources: list[str] = Field(default_factory=list)  # what the agent used, in order: tool:ticket_lookup, tool:stock_lookup, rag
     conversation_id: str | None = None
+    outcome: str = "generated"  # generated | no_context | tool_unavailable | memory_decision | blocked_* (a guardrail refused) ...
+    guardrail: dict | None = None  # {guard, failure_type, action} when a guardrail blocked the request or replaced the answer
     memory: dict | None = None  # {"notice": what was done with a pending proposal, "pending_proposal": {id, kind, summary} if this answer asks to remember something, "used": ids of memories used}
 
 
@@ -45,7 +50,7 @@ class AgentAnswer(BaseModel):
 def ask_agent(body: AgentQuestion, user: User = Depends(get_current_user)) -> AgentAnswer:
     run_id = str(uuid.uuid4())
     try:
-        result = agent.run_agent(body.question, run_id=run_id, conversation_id=body.conversation_id, actor=user.id)
+        result = agent.run_agent(body.question, run_id=run_id, conversation_id=body.conversation_id, actor=user.id, session=SessionContext(customer_id=user.id, role=getattr(user.role, "value", str(user.role))))
     except Exception as error:  # noqa: BLE001 - a node failed: the trace has the step, the client gets a clear message
         logger.error("agent run %s failed: %s", run_id, type(error).__name__)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"{UNAVAILABLE} (reference: {run_id})") from None
@@ -54,7 +59,7 @@ def ask_agent(body: AgentQuestion, user: User = Depends(get_current_user)) -> Ag
     memory = None
     if result.conversation_id:
         memory = {"notice": result.memory_notice, "pending_proposal": ({k: result.pending_proposal[k] for k in ("id", "kind", "summary")} if result.pending_proposal else None), "used": list(result.memory_used)}
-    return AgentAnswer(answer=result.answer, run_id=result.run_id, sources=list(result.sources), conversation_id=result.conversation_id, memory=memory)
+    return AgentAnswer(answer=result.answer, run_id=result.run_id, sources=list(result.sources), conversation_id=result.conversation_id, memory=memory, outcome=result.outcome, guardrail=result.guardrail)
 
 
 @router.get("/runs/{run_id}/trace")
@@ -95,3 +100,26 @@ def forget_memory(entry_id: str = Path(pattern=UUID_PATTERN), user: User = Depen
     if not agent.forget_memory(entry_id, actor=user.id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active memory with that id.")
     return {"forgotten": entry_id}
+
+
+# ----------------------------------------------------------------------------- observability of the guardrails
+@router.get("/guardrails/summary")
+def guardrail_summary(since: str | None = None, user: User = Depends(get_current_user)) -> dict[str, Any]:
+    """How many times each guardrail was triggered (optionally since an ISO timestamp), by guard, type of failure (structural, content, security) and action. Admin or manager."""
+    if user.role not in TRACE_ROLES:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only an admin or a manager can read the guardrail summary.")
+    moment = None
+    if since:
+        try:
+            moment = datetime.fromisoformat(since.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="`since` must be an ISO 8601 timestamp, for example 2026-11-22T10:00:00Z.") from None
+    return guardrail_events.summary(since=moment)
+
+
+@router.get("/guardrails/events")
+def guardrail_event_log(limit: int = 50, user: User = Depends(get_current_user)) -> dict[str, Any]:
+    """The latest guardrail events, newest first (each with its type of failure and a short redacted excerpt). Admin or manager."""
+    if user.role not in TRACE_ROLES:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only an admin or a manager can read the guardrail events.")
+    return {"events": guardrail_events.recent(limit=max(1, min(limit, 200)))}

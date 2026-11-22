@@ -585,7 +585,8 @@ def test_even_if_the_model_proposed_on_one_of_those_the_server_drops_it(agent, e
     result = talk(agent, engine, "conv-gate", message)
     assert result.pending_proposal is None and "Want me to remember" not in result.answer and proposals(engine) == []
     steps = runner.run_trace(result.run_id, engine=engine)
-    assert steps[-1]["node"] == "propose_memory" and "not the kind that holds a memory" in steps[-1]["output"]["memory_proposal"]["dropped"]
+    propose = [s for s in steps if s["node"] == "propose_memory"][0]  # (a casual message also gets the harness's output_guard step after it)
+    assert "not the kind that holds a memory" in propose["output"]["memory_proposal"]["dropped"]
 
 
 def test_a_proposal_with_forbidden_content_is_never_shown_to_the_user_and_is_logged_by_category(agent, engine, model, retrieval):

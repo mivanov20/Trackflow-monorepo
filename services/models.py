@@ -285,3 +285,50 @@ class AgentMemoryProposal(SQLModel, table=True):
     final_content: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # what was written, if anything
     entry_id: uuid.UUID | None = Field(default=None, sa_column=Column(Uuid, nullable=True))
     note: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+
+
+class CustomerShipment(SQLModel, table=True):
+    """Who an order belongs to: the registry the agent's session authorization consults before it says anything about a shipment.
+
+    The agent may only talk about an order that is linked to the customer authenticated in the session. This table is that link (and the order's real
+    country, which decides whether the US or the Spain policy applies). It is filled by the order / tracking integration, never by the agent.
+    """
+
+    __tablename__ = "customer_shipments"
+    __table_args__ = (Index("ix_customer_shipments_customer_id", "customer_id"),)
+
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=Column(Uuid, primary_key=True, server_default=text("gen_random_uuid()") if _POSTGRES else None),
+    )
+    tracking_number: str = Field(sa_column=Column(Text, nullable=False, unique=True))  # normalised: upper case, no # or dashes
+    order_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True, unique=True))
+    customer_id: str = Field(sa_column=Column(Text, nullable=False))  # the authenticated account that owns the order
+    country: str = Field(sa_column=Column(Text, nullable=False))  # US | ES: where the order was shipped; decides which return policy applies
+    status: str = Field(default="in_transit", sa_column=Column(Text, nullable=False))
+    updated_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class GuardrailEvent(SQLModel, table=True):
+    """Every time a guardrail blocks, redirects, redacts or isolates something: which guard, what kind of failure, what it did, and why.
+
+    `failure_type` is one of structural (a malformed format), content (out of scope, sensitive data) or security (injection, extraction, unauthorised access).
+    The excerpt is redacted and short: the log must not become a place where sensitive text ends up.
+    """
+
+    __tablename__ = "guardrail_events"
+    __table_args__ = (Index("ix_guardrail_events_created_at", "created_at"), Index("ix_guardrail_events_guard", "guard", "failure_type"))
+
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=Column(Uuid, primary_key=True, server_default=text("gen_random_uuid()") if _POSTGRES else None),
+    )
+    created_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
+    guard: str = Field(sa_column=Column(Text, nullable=False))  # instruction_change | prompt_extraction | personal_task | out_of_domain | session_authorization | policy_mix | output_leak | ...
+    failure_type: str = Field(sa_column=Column(Text, nullable=False))  # structural | content | security
+    action: str = Field(sa_column=Column(Text, nullable=False))  # blocked | redirected | redacted | isolated | replaced
+    reason: str = Field(default="", sa_column=Column(Text, nullable=False))
+    conversation_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    actor: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    run_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    excerpt: str = Field(default="", sa_column=Column(Text, nullable=False))

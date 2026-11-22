@@ -46,10 +46,15 @@ KNOWLEDGE_WORDS = re.compile(
 STEP_ORDER = ("ticket", "stock", "rag")
 
 
+_ORDER_WORDS = re.compile(r"\b(?:order|orders|tracking|parcel|package|shipment|pedido|paquete|envio|seguimiento)\b", re.IGNORECASE)
+
+
 def extract_ticket_id(question: str) -> int | None:
     match = TICKET_ID.search(question)
     if not match:
         return None
+    if match.group(2) and not match.group(1) and _ORDER_WORDS.search(question):
+        return None  # a bare "#45821" next to the word order or tracking is an order number, which the session guard handles, not a ticket
     value = int(next(group for group in match.groups() if group))
     return value if value > 0 else None
 

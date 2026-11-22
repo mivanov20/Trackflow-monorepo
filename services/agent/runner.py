@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import time
 import uuid
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from threading import Lock
 
@@ -19,6 +21,9 @@ from sqlalchemy import Engine
 
 from .. import database
 from .graph import AgentBuildError, build_graph, compile_graph
+from .guardrails import events as guard_events
+from .guardrails import harness
+from .guardrails.session import SessionContext
 from .trace import TraceRecorder, read_trace, sources_used
 
 CHECKPOINT_DB_ENV = "AGENT_CHECKPOINT_DB"  # a file path: checkpoints survive restarts. Unset: kept in memory only.
@@ -37,6 +42,7 @@ class AgentResult:
     memory_notice: str | None = None  # what was done with a proposal that was pending (saved, not saved...)
     pending_proposal: dict | None = None  # {id, kind, scope_key, summary} of the proposal this turn put to the user, if any
     memory_used: tuple[str, ...] = ()  # ids of the memories that went into the answer
+    guardrail: dict | None = None  # {guard, failure_type, action} when a guardrail blocked the request or replaced the answer
 
 
 def make_checkpointer(path: str | None = None):
@@ -74,18 +80,45 @@ def _result(run_id: str, final: dict, engine: Engine, conversation_id: str | Non
     )
 
 
-def run_agent(question: str, *, graph=None, engine: Engine | None = None, run_id: str | None = None, conversation_id: str | None = None, actor: str | None = None) -> AgentResult:
-    """Runs the graph for one question and returns the answer. A node failure propagates (the endpoint turns it into a clear error).
+def _guard_step(engine: Engine, run_id: str, name: str, question: str, output: dict, first_step: int | None = None) -> None:
+    """A guardrail that acted leaves a step in the trace of the run, next to the nodes of the graph (a run the harness stopped has only this step)."""
+    start = datetime.now(timezone.utc)
+    recorder = TraceRecorder(engine, run_id, first_step or (len(read_trace(engine, run_id)) + 1))
+    recorder.record(name, {"question": question}, output, start, 0)
+
+
+def run_agent(question: str, *, graph=None, engine: Engine | None = None, run_id: str | None = None, conversation_id: str | None = None, actor: str | None = None, session: SessionContext | None = None, guardrails: bool = True) -> AgentResult:
+    """Runs one question through the harness and the graph and returns the answer. A node failure propagates (the endpoint turns it into a clear error).
 
     With a `conversation_id` the conversation uses memory: a pending proposal is resolved first, relevant memories are read, and the agent may propose a new one.
     `actor` is the signed-in user: it is what the audit log records as the person who authorised (or refused) a memory.
+    `session` is who is asking (the authenticated account and its role): with it, every order or tracking number in the message is checked against the customer's own orders.
+    `guardrails=False` runs the bare graph (used by the older unit tests); the API always runs the harness.
     """
     graph, engine, run_id = graph or get_graph(), engine or database.engine, run_id or str(uuid.uuid4())
+    context = guard_events.Context(conversation_id=conversation_id, actor=actor, run_id=run_id, engine=engine)
+    pre = harness.pre_check(question, session=session, conversation_id=conversation_id, actor=actor, run_id=run_id, engine=engine) if guardrails else None
+    if pre is not None and pre.blocked:  # the model is never reached; even the fixed refusal goes through the output guard
+        post = harness.post_check(pre.reply, pre.outcome, pre, question=question, session=session, conversation_id=conversation_id, actor=actor, run_id=run_id, engine=engine, trusted=True)
+        _guard_step(engine, run_id, "input_guard", question, {"guard": pre.guard, "failure_type": pre.failure_type, "action": "blocked", "outcome": pre.outcome}, first_step=1)
+        return AgentResult(run_id=run_id, answer=post.answer, outcome=post.outcome or pre.outcome, conversation_id=conversation_id, guardrail=pre.summary)
     state: dict = {"question": question}
     if conversation_id:
         state.update({"conversation_id": conversation_id, "actor": actor or ""})
-    final = graph.invoke(state, _config(run_id, engine))
-    return _result(run_id, final, engine, conversation_id)
+    if pre is not None:
+        state.update({"verified_facts": pre.verified_facts, "scope_subtype": pre.scope_subtype if pre.scope == "casual" else ""})
+    with guard_events.bind(context):
+        final = graph.invoke(state, _config(run_id, engine))
+    result = _result(run_id, final, engine, conversation_id)
+    if pre is None:
+        return result
+    post = harness.post_check(result.answer, result.outcome, pre, question=question, session=session, conversation_id=conversation_id, actor=actor, run_id=run_id, engine=engine)
+    if post.answer == result.answer and not post.outcome:
+        return result
+    _guard_step(engine, run_id, "output_guard", question, {"guard": post.guard, "failure_type": post.failure_type, "actions": post.actions, "replaced": bool(post.outcome)})
+    from dataclasses import replace
+
+    return replace(result, answer=post.answer, outcome=post.outcome or result.outcome, guardrail={"guard": post.guard, "failure_type": post.failure_type, "action": "replaced"} if post.outcome else result.guardrail)
 
 
 def resume(run_id: str, *, graph=None, engine: Engine | None = None) -> AgentResult:

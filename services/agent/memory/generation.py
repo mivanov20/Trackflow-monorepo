@@ -24,11 +24,10 @@ from data.pipelines import rag
 from data.process import model_client
 from data.process import rag_config as config
 
+from ..guardrails import events, isolation, prompt as secure_prompt
 from . import policy
 from .schema import MemoryProposal, parse_proposal
 from .store import MemoryStore, Recalled
-
-IDENTITY = """You are the TrackFlow customer-experience support assistant. Your readers are the support agents of the CX team, in Los Angeles (United States) and Zaragoza (Spain): they ask you about carriers, deliveries, returns, storage, tickets and stock while they handle B2B clients (the brands) and their end customers (B2C). You may consult the company knowledge base and the live systems; they are tools you use, you are not a sales assistant."""
 
 MEMORY_INSTRUCTIONS = """You also keep a small memory of standing facts that support agents confirm. The block "Remembered notes" in the user message lists the notes that are relevant now: they were approved by support agents on a given date. Use them like any other context, but they can be outdated: if a note and a live system disagree, trust the live system and say so.
 
@@ -50,7 +49,8 @@ or, when the criterion is met:
 {"answer": "<what the user sees>", "memory_proposal": {"kind": "carrier_rule" | "incident_context" | "client_preference", "summary": "<the fact, one sentence, as it would be stored>", "reason": "<why it is worth remembering>", "carrier": "<carrier or null>", "country": "US" | "ES" | null, "client": "<client or null>", "topic": "<short topic or null>", "occurrences": <integer or null>}}
 Do not put the question "want me to remember this?" in the answer: the system adds it."""
 
-SYSTEM_PROMPT = IDENTITY + "\n\n" + rag.ANSWER_RULES + "\n\n" + MEMORY_INSTRUCTIONS
+# The identity, authority, domain and sensitive-data rules are the harness's secure prompt (one prompt for the whole agent); memory adds its own instructions on top.
+SYSTEM_PROMPT = secure_prompt.system_prompt(extra=MEMORY_INSTRUCTIONS)
 
 # the clearest kinds of message that are never memorable (CONTEXT-company.md examples): enforced even if the model proposes something
 NON_MEMORABLE = (
@@ -78,13 +78,14 @@ def _remembered_block(memories: list[Recalled]) -> str:
     if not memories:
         return "Remembered notes: none relevant."
     lines = [f"- ({m.updated_at.date().isoformat()}, {m.kind.replace('_', ' ')}) {m.content}" for m in memories]
-    return "Remembered notes (approved by support agents; they can be outdated):\n" + "\n".join(lines)
+    # a note is text some user approved: it is data too, so it is isolated like a document (an instruction smuggled into memory must not become an order)
+    return "Remembered notes (approved by support agents; they can be outdated):\n" + isolation.isolate("\n".join(lines), "agent-memory")
 
 
-def build_messages(question: str, blocks: list[dict], memories: list[Recalled]) -> list[dict]:
+def build_messages(question: str, blocks: list[dict], memories: list[Recalled], scope_subtype: str | None = None) -> list[dict]:
     """The same context and question as the RAG prompt, plus the notes that are relevant NOW (at most a handful, read from the store: memory is not appended to the system prompt)."""
     user = rag.build_messages(question, blocks)[1]["content"]
-    return [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": f"{_remembered_block(memories)}\n\n{user}"}]
+    return [{"role": "system", "content": secure_prompt.system_prompt(scope_subtype, extra=MEMORY_INSTRUCTIONS)}, {"role": "user", "content": f"{_remembered_block(memories)}\n\n{user}"}]
 
 
 def parse_turn(raw: str) -> Turn:
@@ -97,15 +98,16 @@ def parse_turn(raw: str) -> Turn:
         proposal = data.get("memory_proposal")
         return Turn(answer.strip(), proposal if isinstance(proposal, dict) else None)
     except Exception:  # noqa: BLE001
+        events.record("model_format", "structural", "replaced", "the model's reply was not the expected JSON; it is used as a plain answer and no proposal is made", text=raw[:80])
         return Turn(raw.strip(), None)
 
 
-def generate_with_self_evaluation(question: str, blocks: list[dict], memories: list[Recalled]) -> Turn:
+def generate_with_self_evaluation(question: str, blocks: list[dict], memories: list[Recalled], scope_subtype: str | None = None) -> Turn:
     """ONE call to the generation model: the answer and the self-evaluation together."""
     model = config.generation_model()
     if not model:
         raise model_client.ModelServiceError("The generation model is not configured: set LLM_MODEL.")
-    body = model_client.post("/chat/completions", {"model": model, "temperature": 0, "max_tokens": 700, "messages": build_messages(question, blocks, memories)})
+    body = model_client.post("/chat/completions", {"model": model, "temperature": 0, "max_tokens": 700, "messages": build_messages(question, blocks, memories, scope_subtype)})
     try:
         raw = body["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError):
