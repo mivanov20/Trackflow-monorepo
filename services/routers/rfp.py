@@ -17,6 +17,7 @@ Same API and same database as the rest of TrackFlow: no second service.
 
 import logging
 import os
+from datetime import timezone
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
@@ -86,7 +87,10 @@ def process_ticket(ticket_id: str, engine) -> None:
 
 
 def _iso(value) -> str | None:
-    return value.isoformat() if value else None
+    """ISO 8601 with its offset: a time the database returns without a time zone (SQLite) is UTC, and says so, so a browser does not read it as local time."""
+    if not value:
+        return None
+    return (value if value.tzinfo else value.replace(tzinfo=timezone.utc)).isoformat()
 
 
 def ticket_summary(ticket) -> dict[str, Any]:

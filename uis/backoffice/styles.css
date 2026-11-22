@@ -484,3 +484,35 @@ td .status + .small-button { margin-left: 10px; }
 .rfp-trace { margin: 12px 0; }
 .rfp-trace summary { cursor: pointer; font-weight: 700; font-size: 13px; }
 .rfp-trace-output { font: 11px var(--mono); max-width: 360px; word-break: break-all; }
+
+/* Real time: new RFP tickets */
+.rfp-live { margin-top: 26px; padding: 18px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
+.rfp-live-pill { display: inline-flex; align-items: center; gap: 7px; min-height: 26px; padding: 0 11px; border-radius: 13px; font: 11px var(--mono); background: #f1f1ef; color: #6b6b66; }
+.rfp-live-pill > span { width: 8px; height: 8px; border-radius: 50%; background: #a8a8a2; }
+.rfp-live-pill-connected { background: #edf5ea; color: #3f6b36; }
+.rfp-live-pill-connected > span { background: #4e9a43; animation: rfp-live-dot 2s ease-in-out infinite; }
+.rfp-live-pill-reconnecting, .rfp-live-pill-offline, .rfp-live-pill-connecting { background: #fbf2e7; color: #8a5a1c; }
+.rfp-live-pill-reconnecting > span, .rfp-live-pill-offline > span, .rfp-live-pill-connecting > span { background: #d28a2d; }
+.rfp-live-pill-unauthorized { background: #fff2f0; color: #873c35; }
+.rfp-live-list { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.rfp-live-card { padding: 12px 14px; border: 1px solid #d8e0da; border-left: 4px solid #9db8a4; border-radius: 6px; background: #fbfdfb; }
+.rfp-live-card.is-fresh { border-color: #3f8a4a; border-left-color: #2f7a3b; background: #f1faf0; box-shadow: 0 0 0 3px rgba(63, 138, 74, .15); animation: rfp-live-in .5s ease-out, rfp-live-glow 1.6s ease-out 2; }
+.rfp-live-card-top { display: flex; align-items: center; gap: 8px; }
+.rfp-live-card-top strong { font-size: 13px; }
+.rfp-live-time { margin-left: auto; font: 11px var(--mono); color: var(--muted); }
+.rfp-live-new { padding: 1px 7px; border-radius: 3px; background: #2f7a3b; color: #fff; font: 700 10px var(--mono); letter-spacing: .04em; }
+.rfp-live-client { margin: 6px 0 2px; font-size: 14px; font-weight: 600; }
+.rfp-live-scope { margin: 0 0 8px; font-size: 12px; color: #4a5a50; }
+.rfp-live-card-bottom { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rfp-live-status { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; background: #fbf2e7; color: #a36a21; }
+.rfp-live-status-intake_complete, .rfp-live-status-done { background: #edf5ea; color: #4e7a43; }
+.rfp-live-status-discarded, .rfp-live-status-failed { background: #f1f1ef; color: #7d7d78; }
+.rfp-live-id { font: 10px var(--mono); color: var(--muted); }
+.rfp-live-dismiss { margin-left: auto; border: 0; background: transparent; font-size: 16px; line-height: 1; color: #7d7d78; cursor: pointer; }
+.rfp-live-note { margin: 12px 0 0; font-size: 11px; color: var(--muted); }
+.rfp-live-empty { margin-top: 14px; }
+.rfp-row-fresh { background: #f1faf0; box-shadow: inset 4px 0 0 #2f7a3b; }
+@keyframes rfp-live-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+@keyframes rfp-live-glow { 0% { box-shadow: 0 0 0 0 rgba(63, 138, 74, .5); } 100% { box-shadow: 0 0 0 10px rgba(63, 138, 74, 0); } }
+@keyframes rfp-live-dot { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .rfp-live-card.is-fresh, .rfp-live-pill-connected > span { animation: none; } }

@@ -87,3 +87,7 @@ Protected routes (same login and layout as inventory) for the centralized incide
 The same page now follows the ticket after the intake: it shows each department's **proposal draft** with its evaluation (readability, relevance, compliance), the attempts used, and flags sections that need human review. `Draft the proposal` restarts the drafting of a ticket whose intake is complete.
 
 The page also carries the **approval**: each department's owner decides on their own section (approve, request changes with an optional edited draft, reject), the ticket shows `Waiting for approval` until every owner has decided, the final document appears (readable and downloadable) when the ticket is `Done`, and a trace panel shows which agent did what, in order. Decisions are registered by staff accounts (`RFP_APPROVER_ROLES`).
+
+## Real-time RFP notifications
+
+The Operations desk has a **New RFP tickets** panel that shows a ticket the moment the intake accepts an RFP (Server-Sent Events, event `rfp_ticket_created`), without a reload. The stream is read with `fetch` + `ReadableStream` (JWT in `Authorization`), reconnects with progressive backoff, and recovers what was missed by refetching the ticket list once per connection (plus `Last-Event-ID`), deduplicating by `ticket_id`. The RFP intake list updates live too. See [docs/realtime/rfp-notifications.md](../../docs/realtime/rfp-notifications.md).

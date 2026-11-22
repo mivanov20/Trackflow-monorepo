@@ -16,6 +16,8 @@ from .routers.inventory import router as inventory_router
 from .routers.agent import router as agent_router
 from .routers.knowledge import router as knowledge_router
 from .routers.rfp import router as rfp_router
+from .routers.rfp_events import router as rfp_events_router
+from .events import bus as event_bus
 from .routers.profiles import router as profiles_router
 from .reporting.router import router as reporting_router
 from .routers.tasks import router as tasks_router
@@ -25,7 +27,7 @@ from .agent import validate_agent
 from .mailer import validate_email_config
 from .security import validate_security_config
 from data.pipelines.weekly_performance.schema import ensure_reporting
-from data.pipelines.rfp_intake import proposal_store as rfp_proposal_store, store as rfp_store
+from data.pipelines.rfp_intake import notifications as rfp_notifications, proposal_store as rfp_proposal_store, store as rfp_store
 from sqlmodel import Session
 
 logger = logging.getLogger("services")
@@ -37,6 +39,7 @@ GENERIC_ERROR_MESSAGE = "Something went wrong on our side. Please try again in a
 async def lifespan(_: FastAPI):
     """Valida la configuración de seguridad y prepara la base de datos al iniciar el servicio."""
     validate_security_config()
+    rfp_notifications.set_publisher(event_bus.publish)  # the intake raises `rfp_ticket_created`; the SSE stream delivers it
     validate_email_config()
     validate_analysis_config()
     validate_telemetry_config()
@@ -97,7 +100,7 @@ app.add_middleware(
     ).split(","),
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "Last-Event-ID"],  # Last-Event-ID: the dashboard's stream asks for what it missed
 )
 app.include_router(auth_router)
 app.include_router(users_router)
@@ -111,6 +114,7 @@ app.include_router(tasks_router)
 app.include_router(knowledge_router)
 app.include_router(agent_router)
 app.include_router(rfp_router)
+app.include_router(rfp_events_router)
 
 
 @app.get("/health", tags=["health"])

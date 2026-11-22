@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { GENERIC_ERROR_MESSAGE, messageFor } from "../../../lib/api-client";
 import { getAccessToken } from "../../../lib/auth";
+import { useRfpTicketFeed } from "../../components/useRfpTicketFeed";
 import {
   APPROVAL_STATUS_LABELS, COUNTRY_LABELS, DRAFT_STATUS_LABELS, MAX_UPLOAD_MB, POLL_INTERVAL_MS, SERVICE_LABELS, canStartApproval, canStartProposal, checkDecision, checkPdf, figureLines, hasPending, inProgress, rfpApi, scoreText, statusLabel,
   type DecisionInput, type DecisionKind, type DepartmentSection, type FinalDocument, type TicketDetail, type TicketSummary, type TraceEvent,
@@ -276,6 +277,23 @@ export default function RfpIntakePage() {
   const input = useRef<HTMLInputElement>(null);
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selected;
+  const feed = useRfpTicketFeed();
+
+  // A ticket registered by anybody appears in this list the moment it is registered (SSE), without a refetch and without a duplicate row.
+  useEffect(() => {
+    if (feed.tickets.length === 0) return;
+    setTickets((current) => {
+      const known = new Set(current.map((ticket) => ticket.ticket_id));
+      const added: TicketSummary[] = feed.tickets
+        .filter((ticket) => !known.has(ticket.ticket_id))
+        .map((ticket) => ({
+          ticket_id: ticket.ticket_id, rfp_id: ticket.rfp_id, status: ticket.status as TicketSummary["status"], current_step: "Registered", original_filename: "", client_name: ticket.client_name,
+          client_country: ticket.client_country, departments_needed: ticket.departments_needed, document_type: null, proposal_state: "not_started", approval_state: "not_started", created_at: ticket.created_at, updated_at: ticket.created_at,
+        }));
+      return added.length > 0 ? [...added, ...current] : current;
+    });
+  }, [feed.tickets]);
+  const freshIds = new Set(feed.tickets.filter((ticket) => ticket.fresh).map((ticket) => ticket.ticket_id));
 
   const refresh = useCallback(async () => {
     const token = getAccessToken();
@@ -295,6 +313,9 @@ export default function RfpIntakePage() {
 
   useEffect(() => {
     void refresh();
+    const wanted = new URLSearchParams(window.location.search).get("ticket"); // a card of the dashboard opens its ticket here
+    if (wanted) void open(wanted);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refresh]);
 
   const pending = hasPending(tickets) || (detail !== null && inProgress(detail));
@@ -415,7 +436,7 @@ export default function RfpIntakePage() {
               <thead><tr><th scope="col">RFP</th><th scope="col">File</th><th scope="col">Status</th><th scope="col">Now</th><th scope="col">Client</th><th scope="col">Departments</th><th scope="col"><span className="sr-only">Open</span></th></tr></thead>
               <tbody>
                 {tickets.map((ticket) => (
-                  <tr key={ticket.ticket_id} aria-selected={ticket.ticket_id === selected}>
+                  <tr key={ticket.ticket_id} aria-selected={ticket.ticket_id === selected} className={freshIds.has(ticket.ticket_id) ? "rfp-row-fresh" : undefined}>
                     <td>{ticket.rfp_id}</td>
                     <td>{ticket.original_filename}</td>
                     <td><StatusBadge ticket={ticket} /></td>
