@@ -1,4 +1,6 @@
 import { ApiError, apiRequest } from "./api-client";
+import { secondsSince } from "./telemetry-domain";
+import { newRequestId, track, withRequestId } from "./telemetry";
 
 // Mirrors packages/shared/trackflow_shared/incidents.py; the API is the source of truth.
 export const STATUSES = ["open", "in_progress", "resolved", "discarded"] as const;
@@ -140,23 +142,75 @@ export function fieldErrorsOf(error: unknown): Record<string, string> {
   return Object.fromEntries(Object.entries(error.fieldErrors).map(([field, message]) => [field, humanize(message)]));
 }
 
+/** Incidents seen in API answers: a status change needs the status the incident had before. */
+const knownIncidents = new Map<number, Incident>();
+
+const FILTER_NAMES = ["status", "origin", "branch", "category"] as const;
+const FILTER_DEBOUNCE_MS = 800;
+let lastFilterState = "";
+let filterTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Records which filters are active once the list for them has loaded. Debounced, and only the final state is
+ * sent, so changing three selects in a row gives one event. Only the filter names are kept, never their values.
+ */
+function trackFilters(filters: IncidentFilters, resultCount: number): void {
+  const active = FILTER_NAMES.filter((name) => Boolean(filters[name]));
+  const state = FILTER_NAMES.map((name) => `${name}=${filters[name] ?? ""}`).join("&");
+  if (state === lastFilterState) return;
+  lastFilterState = state;
+  if (filterTimer !== null) clearTimeout(filterTimer);
+  if (active.length === 0) return;
+  filterTimer = setTimeout(() => {
+    filterTimer = null;
+    track("filter_applied", { surface: "incident_list", filters_active: active, result_count: resultCount });
+  }, FILTER_DEBOUNCE_MS);
+}
+
 export const incidentsApi = {
-  list(token: string, filters: IncidentFilters = {}): Promise<Incident[]> {
+  async list(token: string, filters: IncidentFilters = {}): Promise<Incident[]> {
     const query = new URLSearchParams(
       Object.entries(filters).filter((entry): entry is [string, string] => Boolean(entry[1])),
     ).toString();
-    return apiRequest<Incident[]>(`/api/incidents${query ? `?${query}` : ""}`, { token, ...REQUEST_OPTIONS });
+    const incidents = await apiRequest<Incident[]>(`/api/incidents${query ? `?${query}` : ""}`, { token, ...REQUEST_OPTIONS });
+    for (const incident of incidents) knownIncidents.set(incident.id, incident);
+    trackFilters(filters, incidents.length);
+    return incidents;
   },
-  create(token: string, payload: IncidentInput): Promise<Incident> {
-    return apiRequest<Incident>("/api/incidents", { method: "POST", token, body: payload, ...REQUEST_OPTIONS });
+  async create(token: string, payload: IncidentInput): Promise<Incident> {
+    const requestId = newRequestId();
+    const incident = await apiRequest<Incident>("/api/incidents", { method: "POST", token, body: payload, requestId, ...REQUEST_OPTIONS });
+    knownIncidents.set(incident.id, incident);
+    // Only the closed categories: the title and the description are free text and are never recorded.
+    withRequestId(requestId, () =>
+      track("incident_created", { category: incident.category, origin: incident.origin, branch: incident.branch, initial_status: incident.status }),
+    );
+    return incident;
   },
-  updateStatus(token: string, id: number, status: IncidentStatus): Promise<Incident> {
-    return apiRequest<Incident>(`/api/incidents/${id}/status`, {
+  async updateStatus(token: string, id: number, status: IncidentStatus): Promise<Incident> {
+    const requestId = newRequestId();
+    const before = knownIncidents.get(id);
+    const incident = await apiRequest<Incident>(`/api/incidents/${id}/status`, {
       method: "PATCH",
       token,
       body: { status },
+      requestId,
       ...REQUEST_OPTIONS,
     });
+    knownIncidents.set(incident.id, incident);
+    if (before) {
+      withRequestId(requestId, () =>
+        track("incident_status_changed", {
+          incident_id: incident.id,
+          from_status: before.status,
+          to_status: incident.status,
+          incident_age_seconds: secondsSince(incident.created_at),
+          category: incident.category,
+          branch: incident.branch,
+        }),
+      );
+    }
+    return incident;
   },
   summary(token: string): Promise<IncidentSummary> {
     return apiRequest<IncidentSummary>("/api/incidents/summary", { token, ...REQUEST_OPTIONS });

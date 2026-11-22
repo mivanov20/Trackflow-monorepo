@@ -18,7 +18,7 @@ from trackflow_shared.incident_analysis import RULE_KEYS  # noqa: E402
 from trackflow_shared.incidents import BRANCHES, CATEGORIES as INCIDENT_CATEGORIES  # noqa: E402
 from trackflow_shared.incidents import ORIGINS as INCIDENT_ORIGINS, STATUSES as INCIDENT_STATUSES  # noqa: E402
 
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"  # 1.1.0: adds login_attempt_failed; frontend error fingerprint is a 64-bit hash
 
 # --- shared vocabularies -----------------------------------------------------------------
 
@@ -29,17 +29,17 @@ USER_ROLES = ["admin", "manager", "user"]
 DEVICE_CLASSES = ["desktop", "tablet", "mobile"]
 CONNECTION_TYPES = ["4g", "3g", "2g", "slow-2g", "unknown"]
 SECTIONS = [
-    "overview", "inventory_products", "inventory_inbound_order", "inventory_outbound_order", "inventory_order_history",
+    "overview", "inventory_products", "inventory_inbound_order", "inventory_outbound_order", "inventory_order_history", "inventory_stock_count",
     "incidents_list", "incidents_new", "incidents_file_analysis", "account_profile", "account_change_password",
     "auth_login", "auth_register", "auth_forgot_password", "auth_reset_password", "other",
 ]
 FLOWS = [
     "inbound_order", "outbound_order", "incident_report", "incident_file_analysis",
-    "registration", "password_reset", "password_change",
+    "registration", "password_reset", "password_change", "stock_count",
 ]
 FORMS = [
     "inbound_order", "outbound_order", "incident_report", "registration", "login",
-    "password_reset_request", "password_reset", "password_change", "profile_edit",
+    "password_reset_request", "password_reset", "password_change", "profile_edit", "stock_count",
 ]
 FORM_FIELDS = [
     "email", "password", "name", "phone", "address", "product", "quantity", "reference", "exit_type", "tracking_number",
@@ -414,6 +414,26 @@ EVENTS = [
             I("attempts_in_window", "Failed attempts for this email hash in the last 15 minutes, including this one.", minimum=1, how="Counted server-side."),
         ],
         example=dict(failure_reason="wrong_password", email_hash="9f2c4a7b1d3e5f60", source_network_hash="1a2b3c4d5e6f7081", attempts_in_window=3),
+    ),
+    dict(
+        type="login_attempt_failed", klass="opportunity", category="authentication", source=["frontend"],
+        description="A sign-in attempt failed, seen from the browser: the user could not get in.",
+        hypothesis="whether people fail to sign in because the credentials are wrong or because the service cannot be reached, as the user experiences it",
+        decision="put effort into the password-help path when wrong credentials dominate, and escalate to engineering when network or service failures dominate",
+        consumers="TrackFlow Tech; Ana Whitfield",
+        trigger="The sign-in form submitted and `signIn()` threw.",
+        emit_at="`uis/backoffice/lib/auth.ts` -> `signIn()`, in the failure branch. It is an authentication hook, so no page tracks it.",
+        delivery=BATCH, window="hourly",
+        delivery_reason="Deciding where to invest (password help or reliability) is a weekly conversation. The security signal that needs a fast answer is the streamed `login_failed` from the API.",
+        throttle="One event per submit.",
+        pii="none", pii_note="The email and the password the user typed are never captured, not even hashed: the browser cannot hold the server pepper. Only the failure class and a counter.",
+        notes="This event is the user's view of a failure. It complements, and does not replace, the backend `login_failed`, which knows the internal reason and carries the keyed email hash.",
+        properties=[
+            S("failure_reason", "Why the attempt failed, as the browser can tell.", enum=["invalid_credentials", "network_error", "rate_limited", "service_unavailable", "storage_unavailable"],
+              how="HTTP status of the answer: 400, 401 or 403 is `invalid_credentials`, no answer is `network_error`, 429 is `rate_limited`, 5xx is `service_unavailable`, and a browser that refuses to store the session is `storage_unavailable`."),
+            I("attempt_number", "Consecutive failed attempts in this visit to the page, starting at 1.", minimum=1, maximum=50, how="Counter kept in memory, reset on success."),
+        ],
+        example=dict(failure_reason="invalid_credentials", attempt_number=2),
     ),
     dict(
         type="session_expired", klass="opportunity", category="authentication", source=["frontend"],
@@ -847,7 +867,7 @@ EVENTS = [
         properties=[
             S("error_source", "Where the error was intercepted.", enum=["window_error", "unhandled_rejection", "react_error_boundary"], how="Which handler fired."),
             S("error_name", "Class of the error, for example `TypeError`.", pattern="^[A-Za-z0-9_$.]{1,80}$", how="`error.name`."),
-            S("error_fingerprint", "Hash of the normalised stack, to group the same error.", pattern=HASH16, how="First 16 hex characters of SHA-256 of the stack frames with line numbers kept and values removed."),
+            S("error_fingerprint", "Hash of the normalised stack, to group the same error.", pattern=HASH16, how="16 hex characters of a 64-bit FNV-1a hash of the normalised stack (file paths without query strings, line numbers kept, values removed). It only groups repeats, so it does not need to be cryptographic and can be computed synchronously at capture time."),
             route_template("Route where it happened."),
             I("occurrences", "How many identical errors this event stands for.", minimum=1, how="Counter of folded duplicates."),
             B("handled_by_boundary", "Whether a React error boundary showed the fallback screen.", how="True when the boundary fired."),

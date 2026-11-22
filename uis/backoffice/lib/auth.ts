@@ -1,5 +1,7 @@
 import { ApiError, GENERIC_ERROR_MESSAGE, apiRequest } from "./api-client";
 import { getAccessToken, replaceToken, saveSession, type SessionUser } from "./session";
+import { actorRole } from "./telemetry-domain";
+import { newRequestId, track, withRequestId } from "./telemetry";
 
 export { clearSession, getAccessToken, getCurrentUser, saveSession, saveUser } from "./session";
 export type { SessionUser as AuthUser } from "./session";
@@ -45,7 +47,19 @@ export interface ProfileInput {
 
 /** `POST /users`: crea la cuenta y, en la misma operación, su perfil. */
 export async function registerUser(payload: RegisterInput): Promise<{ id: string; email: string }> {
-  return apiRequest<{ id: string; email: string }>("/users", { method: "POST", body: payload });
+  const requestId = newRequestId();
+  const created = await apiRequest<{ id: string; email: string }>("/users", { method: "POST", body: payload, requestId });
+  // Only whether the optional fields were filled in: their content is never recorded.
+  withRequestId(requestId, () =>
+    track("user_registered", {
+      initial_role: "user",
+      has_name: Boolean(payload.name?.trim()),
+      has_phone: Boolean(payload.phone?.trim()),
+      has_address: Boolean(payload.address?.trim()),
+      registration_channel: "users_endpoint",
+    }),
+  );
+  return created;
 }
 
 /** `POST /auth/login`: valida las credenciales y devuelve el token. */
@@ -82,12 +96,15 @@ export async function resetPassword(token: string, newPassword: string): Promise
  * la respuesta trae un token nuevo que sustituye al guardado para que esta sesión continúe.
  */
 export async function changePassword(currentPassword: string, newPassword: string): Promise<MessageResponse> {
+  const requestId = newRequestId();
   const response = await apiRequest<MessageResponse & { access_token: string }>("/auth/change-password", {
     method: "POST",
     token: getAccessToken(),
     body: { current_password: currentPassword, new_password: newPassword },
+    requestId,
   });
   replaceToken(response.access_token);
+  withRequestId(requestId, () => track("password_changed", { user_role: actorRole(), sessions_revoked: true }));
   return { message: response.message };
 }
 
@@ -109,9 +126,31 @@ export class StorageUnavailableError extends Error {
  * Lanza ApiError si las credenciales no son válidas o la API no responde, y StorageUnavailableError si no se puede guardar.
  */
 export async function signIn(email: string, password: string): Promise<LoginResponse> {
-  const session = await loginUser({ email, password });
-  if (!saveSession(session)) throw new StorageUnavailableError();
-  return session;
+  try {
+    const session = await loginUser({ email, password });
+    if (!saveSession(session)) throw new StorageUnavailableError();
+    failedSignIns = 0;
+    return session;
+  } catch (caught) {
+    failedSignIns += 1;
+    // Only the failure class and a counter are recorded: never the email or the password that was typed.
+    track("login_attempt_failed", { failure_reason: signInFailureReason(caught), attempt_number: Math.min(failedSignIns, 50) });
+    throw caught;
+  }
+}
+
+/** Consecutive failed sign-ins in this page visit; reset by a success. */
+let failedSignIns = 0;
+
+/** What the browser can tell about a failed sign-in from the way it failed. */
+function signInFailureReason(error: unknown): "invalid_credentials" | "network_error" | "rate_limited" | "service_unavailable" | "storage_unavailable" {
+  if (error instanceof StorageUnavailableError) return "storage_unavailable";
+  if (error instanceof ApiError) {
+    if (error.status === 0) return "network_error";
+    if (error.status === 429) return "rate_limited";
+    if (error.status >= 500) return "service_unavailable";
+  }
+  return "invalid_credentials";
 }
 
 /** Mensaje legible para cualquier error de los flujos de acceso; nunca texto técnico. */

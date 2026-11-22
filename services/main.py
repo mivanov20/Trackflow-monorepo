@@ -14,6 +14,7 @@ from .routers.incident_analysis import router as incident_analysis_router, valid
 from .routers.incidents import router as incidents_router
 from .routers.inventory import router as inventory_router
 from .routers.profiles import router as profiles_router
+from .routers.telemetry import router as telemetry_router, validate_telemetry_config
 from .routers.users import router as users_router
 from .mailer import validate_email_config
 from .security import validate_security_config
@@ -29,6 +30,7 @@ async def lifespan(_: FastAPI):
     validate_security_config()
     validate_email_config()
     validate_analysis_config()
+    validate_telemetry_config()
     create_db_and_tables()
     ensure_user_uid_columns()
     yield
@@ -73,7 +75,7 @@ app.add_middleware(
     ).split(","),
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
 )
 app.include_router(auth_router)
 app.include_router(users_router)
@@ -81,6 +83,7 @@ app.include_router(profiles_router)
 app.include_router(inventory_router)
 app.include_router(incidents_router)
 app.include_router(incident_analysis_router)
+app.include_router(telemetry_router)
 
 
 @app.get("/health", tags=["health"])

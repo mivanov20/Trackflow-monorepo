@@ -3,7 +3,7 @@
   "$id": "https://trackflow.example/telemetry/event-schemas.json",
   "title": "TrackFlow telemetry event schemas",
   "description": "Validate an event in two steps: it must match #/definitions/envelope, then the schema at #/events/<event_type>, which re-applies the envelope, fixes the event_type and allowlists the properties. Unknown properties are rejected (additionalProperties: false). Custom x-* keywords are documentation for humans and for the pipeline; validators ignore them.",
-  "x-schemaVersion": "1.0.0",
+  "x-schemaVersion": "1.1.0",
   "x-taxonomy": {
     "verbs": {
       "created": "a business record was persisted (after the commit, never before)",
@@ -93,6 +93,7 @@
             "stock_integrity_violation_detected",
             "login_succeeded",
             "login_failed",
+            "login_attempt_failed",
             "session_expired",
             "user_registered",
             "password_reset_requested",
@@ -1442,6 +1443,62 @@
         }
       ]
     },
+    "login_attempt_failed": {
+      "title": "login_attempt_failed",
+      "description": "A sign-in attempt failed, seen from the browser: the user could not get in.",
+      "x-class": "identified_opportunity",
+      "x-category": "authentication",
+      "x-source": [
+        "frontend"
+      ],
+      "x-delivery": "batch",
+      "x-delivery-window": "hourly",
+      "x-hypothesis": "whether people fail to sign in because the credentials are wrong or because the service cannot be reached, as the user experiences it",
+      "x-decision": "put effort into the password-help path when wrong credentials dominate, and escalate to engineering when network or service failures dominate",
+      "x-statement": "We capture login_attempt_failed because we need to know whether people fail to sign in because the credentials are wrong or because the service cannot be reached, as the user experiences it, which allows us to make the decision put effort into the password-help path when wrong credentials dominate, and escalate to engineering when network or service failures dominate.",
+      "x-pii": "none",
+      "allOf": [
+        {
+          "$ref": "#/definitions/envelope"
+        },
+        {
+          "properties": {
+            "event_type": {
+              "const": "login_attempt_failed"
+            },
+            "properties": {
+              "type": "object",
+              "required": [
+                "failure_reason",
+                "attempt_number"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "failure_reason": {
+                  "type": "string",
+                  "enum": [
+                    "invalid_credentials",
+                    "network_error",
+                    "rate_limited",
+                    "service_unavailable",
+                    "storage_unavailable"
+                  ],
+                  "description": "Why the attempt failed, as the browser can tell.",
+                  "x-pii": "none"
+                },
+                "attempt_number": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 50,
+                  "description": "Consecutive failed attempts in this visit to the page, starting at 1.",
+                  "x-pii": "none"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
     "session_expired": {
       "title": "session_expired",
       "description": "A signed-in user was sent back to the login page because the session stopped being valid.",
@@ -2440,6 +2497,7 @@
                     "inventory_inbound_order",
                     "inventory_outbound_order",
                     "inventory_order_history",
+                    "inventory_stock_count",
                     "incidents_list",
                     "incidents_new",
                     "incidents_file_analysis",
@@ -2471,6 +2529,7 @@
                     "inventory_inbound_order",
                     "inventory_outbound_order",
                     "inventory_order_history",
+                    "inventory_stock_count",
                     "incidents_list",
                     "incidents_new",
                     "incidents_file_analysis",
@@ -2548,7 +2607,8 @@
                     "incident_file_analysis",
                     "registration",
                     "password_reset",
-                    "password_change"
+                    "password_change",
+                    "stock_count"
                   ],
                   "description": "Which guided task.",
                   "x-pii": "none"
@@ -2561,6 +2621,7 @@
                     "inventory_inbound_order",
                     "inventory_outbound_order",
                     "inventory_order_history",
+                    "inventory_stock_count",
                     "incidents_list",
                     "incidents_new",
                     "incidents_file_analysis",
@@ -2623,7 +2684,8 @@
                     "incident_file_analysis",
                     "registration",
                     "password_reset",
-                    "password_change"
+                    "password_change",
+                    "stock_count"
                   ],
                   "description": "Which guided task.",
                   "x-pii": "none"
@@ -2771,7 +2833,8 @@
                     "password_reset_request",
                     "password_reset",
                     "password_change",
-                    "profile_edit"
+                    "profile_edit",
+                    "stock_count"
                   ],
                   "description": "Which form.",
                   "x-pii": "none"
@@ -2959,6 +3022,7 @@
                     "inventory_inbound_order",
                     "inventory_outbound_order",
                     "inventory_order_history",
+                    "inventory_stock_count",
                     "incidents_list",
                     "incidents_new",
                     "incidents_file_analysis",

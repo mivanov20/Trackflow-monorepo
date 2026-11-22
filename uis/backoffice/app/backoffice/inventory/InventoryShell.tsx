@@ -31,6 +31,7 @@ export function InventoryShell({ children }: { children: ReactNode }) {
           <Link href="/backoffice/inventory/products">Products</Link>
           <Link href="/backoffice/inventory/orders/inbound">Inbound order</Link>
           <Link href="/backoffice/inventory/orders/outbound">Outbound order</Link>
+          <Link href="/backoffice/inventory/stock-count">Stock count</Link>
           <Link href="/backoffice/inventory/orders">Orders history</Link>
         </nav>
         <nav aria-label="Incidents" className="incident-nav">

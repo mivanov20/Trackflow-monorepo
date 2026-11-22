@@ -25,6 +25,9 @@ services:
       API_INTERNAL_URL: ${API_INTERNAL_URL:-http://api:8000}
       # Dirección de la API que usa el NAVEGADOR: una ruta relativa que el propio backoffice reenvía a la API.
       NEXT_PUBLIC_INVENTORY_API_URL: ${NEXT_PUBLIC_INVENTORY_API_URL:-/backend}
+      # Dónde envía el NAVEGADOR los lotes de telemetría. Hoy apunta al receptor provisional de la API;
+      # en la fase con persistencia se cambia esta variable y el frontend no necesita cambios.
+      NEXT_PUBLIC_TELEMETRY_ENDPOINT: ${NEXT_PUBLIC_TELEMETRY_ENDPOINT:-/backend/telemetry/events}
       # Recarga en caliente fiable sobre carpetas montadas desde Windows y macOS.
       WATCHPACK_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
@@ -71,6 +74,8 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
       AUTH_DB_PATH: ${AUTH_DB_PATH:-/data/users.json}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001}
+      # Dirección del receptor de telemetría (ruta de esta API o URL completa). Se valida al arrancar.
+      TELEMETRY_ENDPOINT: ${TELEMETRY_ENDPOINT:-/telemetry/events}
       # Correo de recuperación de contraseña: `console` escribe el enlace en el log (docker compose logs api).
       EMAIL_PROVIDER: ${EMAIL_PROVIDER:-console}
       RESEND_API_KEY: ${RESEND_API_KEY:-}

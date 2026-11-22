@@ -169,3 +169,82 @@ def test_transport_and_prerequisites_are_specified():
         assert heading in PLAN
     for needle in ("POST /telemetry/events", "202", "429", "Retry-After", "X-Request-ID", "min_stock", "stock_is_read_only", "warehouse_mismatch", "TELEMETRY_PEPPER"):
         assert needle in PLAN, needle
+
+
+# --- Phase 2: the backoffice implements the plan --------------------------------------------
+
+BACKOFFICE = REPO_ROOT / "uis" / "backoffice"
+SOURCE_FILES = [p for folder in ("lib", "app") for p in (BACKOFFICE / folder).rglob("*.ts*") if p.name != "telemetry-schema.generated.ts"]
+SOURCE_TEXT = {p: p.read_text(encoding="utf-8") for p in SOURCE_FILES}
+
+
+def track_literals():
+    pattern = re.compile(r'track\(\s*"([a-z0-9_]+)"')
+    found = {}
+    for path, text in SOURCE_TEXT.items():
+        for name in pattern.findall(text):
+            found.setdefault(name, set()).add(path.relative_to(BACKOFFICE).as_posix())
+    return found
+
+
+def test_every_track_call_uses_an_event_of_the_approved_plan():
+    known = {e["type"] for e in ev.EVENTS}
+    used = track_literals()
+    assert set(used) <= known, f"events not in the plan: {set(used) - known}"
+
+
+def test_every_mandatory_metric_is_instrumented_in_the_backoffice():
+    used = track_literals()
+    for name in MANDATORY:
+        assert name in used, f"{name} is not tracked anywhere"
+
+
+def test_implementation_table_matches_the_source_code():
+    import build
+
+    used = track_literals()
+    for name, where in build.FRONTEND_IMPLEMENTATION.items():
+        assert name in used or name in PROVIDER_EVENTS, f"{name} is listed as implemented but never tracked"
+        for path in re.findall(r"`((?:lib|app)/[A-Za-z0-9_./-]+)`", where):
+            assert (BACKOFFICE / path).exists(), f"{path} does not exist"
+    for name in used:
+        assert name in build.FRONTEND_IMPLEMENTATION, f"{name} is tracked but missing from the implementation table"
+
+
+# Tracked through helper functions in telemetry-flows.ts and telemetry-errors.ts, with the same literal call form.
+PROVIDER_EVENTS = {"page_viewed", "flow_started", "flow_abandoned", "form_validation_failed", "page_load_recorded", "frontend_error_caught"}
+
+
+def test_only_the_telemetry_service_and_the_api_client_call_fetch():
+    allowed = {"lib/telemetry.ts", "lib/api-client.ts"}
+    for path, text in SOURCE_TEXT.items():
+        relative = path.relative_to(BACKOFFICE).as_posix()
+        if relative in allowed:
+            continue
+        assert not re.search(r"(?<![A-Za-z.])fetch\(|axios|sendBeacon", text), f"{relative} sends requests on its own"
+
+
+def test_pages_and_components_do_not_build_envelopes_or_know_the_endpoint():
+    for path, text in SOURCE_TEXT.items():
+        relative = path.relative_to(BACKOFFICE).as_posix()
+        assert "NEXT_PUBLIC_TELEMETRY_ENDPOINT" not in text or relative == "lib/telemetry.ts", relative
+        if relative.startswith("app/"):
+            assert not re.search(r"eventId|sessionId|schemaVersion", text), f"{relative} sets envelope fields"
+            assert "track(" not in text.replace("trackFrontendError(", ""), f"{relative} tracks directly"
+
+
+def test_endpoint_is_configured_through_environment_variables():
+    compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    local_example = (BACKOFFICE / ".env.example").read_text(encoding="utf-8")
+    for text in (compose, env_example):
+        assert "NEXT_PUBLIC_TELEMETRY_ENDPOINT" in text
+        assert "TELEMETRY_ENDPOINT:" in text or "TELEMETRY_ENDPOINT=" in text
+    assert "NEXT_PUBLIC_TELEMETRY_ENDPOINT" in local_example
+
+
+def test_browser_schema_is_generated_from_the_plan():
+    text = (BACKOFFICE / "lib" / "telemetry-schema.generated.ts").read_text(encoding="utf-8")
+    assert f'TELEMETRY_SCHEMA_VERSION = "{ev.SCHEMA_VERSION}"' in text
+    for e in ev.EVENTS:
+        assert f'"{e["type"]}": {{' in text
