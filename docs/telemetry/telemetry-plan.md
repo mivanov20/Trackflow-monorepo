@@ -2,7 +2,7 @@
 
 # TrackFlow Telemetry Plan
 
-Version 1.2.0 · 38 events · companion file: [`event-schemas.json`](event-schemas.json)
+Version 1.3.0 · 38 events · companion file: [`event-schemas.json`](event-schemas.json)
 
 This is a design document. It describes what TrackFlow should measure, why, and exactly how each event looks. It contains no instrumentation code. Another developer should be able to instrument every event from this document and the JSON file alone.
 
@@ -299,7 +299,7 @@ Every event, from the browser or from the API, has the same outer shape. Only `p
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "outbound_order_created",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": { "...": "see the event" }
 }
@@ -395,7 +395,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "inbound_order_created",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "order_id": "1042",
@@ -447,7 +447,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "outbound_order_created",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "order_id": "2210",
@@ -500,7 +500,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "stock_threshold_triggered",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "warehouse": "los_angeles",
@@ -553,7 +553,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "direct_stock_edit_rejected",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "warehouse": "zaragoza",
@@ -608,7 +608,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "inventory_discrepancy_detected",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "warehouse": "los_angeles",
@@ -663,7 +663,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "inbound_order_rejected",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "warehouse": "zaragoza",
@@ -718,7 +718,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "outbound_order_rejected",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "warehouse": "los_angeles",
@@ -768,7 +768,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "product_created",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "warehouse": "los_angeles",
@@ -819,7 +819,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "stock_integrity_violation_detected",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "warehouse": "zaragoza",
@@ -869,7 +869,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "login_succeeded",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "user_role": "user",
@@ -912,7 +912,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "login_failed",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "failure_reason": "wrong_password",
@@ -953,7 +953,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "login_attempt_failed",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "failure_reason": "invalid_credentials",
@@ -991,7 +991,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "session_expired",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "reason": "token_expired",
@@ -1032,7 +1032,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "user_registered",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "initial_role": "user",
@@ -1073,7 +1073,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "password_reset_requested",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "email_hash": "0a1b2c3d4e5f6071",
@@ -1111,7 +1111,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "password_reset_completed",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "token_age_seconds": 420,
@@ -1148,7 +1148,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "password_reset_rejected",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "rejection_reason": "expired",
@@ -1185,7 +1185,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "password_changed",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "user_role": "manager",
@@ -1222,7 +1222,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "password_change_rejected",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "rejection_reason": "wrong_current_password",
@@ -1263,7 +1263,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "access_denied",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "denial_reason": "not_owner",
@@ -1305,7 +1305,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "user_role_changed",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "target_user_id": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
@@ -1347,7 +1347,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "incident_created",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "category": "lost_parcel",
@@ -1390,7 +1390,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "incident_status_changed",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "incident_id": 17,
@@ -1436,7 +1436,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "incident_file_analyzed",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "total_records": 100,
@@ -1485,7 +1485,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "incident_file_rejected",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "rejection_reason": "missing_columns",
@@ -1514,9 +1514,9 @@ A screen of the backoffice was shown.
 
 | Property | Type | Req. | PII | Description and how it is obtained |
 |---|---|---|---|---|
-| `section` | string (enum); one of `overview`, `inventory_products`, `inventory_inbound_order`, `inventory_outbound_order`, `inventory_order_history`, `inventory_stock_count`, `telemetry_report`, `incidents_list`, `incidents_new`, `incidents_file_analysis`, `account_profile`, `account_change_password`, `auth_login`, `auth_register`, `auth_forgot_password`, `auth_reset_password`, `other` | yes | none | Section of the backoffice. **Source:** Map from the route. |
+| `section` | string (enum); one of `overview`, `inventory_products`, `inventory_inbound_order`, `inventory_outbound_order`, `inventory_order_history`, `inventory_stock_count`, `telemetry_report`, `reporting_weekly_performance`, `incidents_list`, `incidents_new`, `incidents_file_analysis`, `account_profile`, `account_change_password`, `auth_login`, `auth_register`, `auth_forgot_password`, `auth_reset_password`, `other` | yes | none | Section of the backoffice. **Source:** Map from the route. |
 | `route_template` | string; pattern `^/[A-Za-z0-9_{}./-]{0,119}$` | yes | none | Next.js route pattern, without query string. **Source:** FastAPI route path template, or the Next.js route pattern. Never the real URL: query strings can carry tokens. |
-| `referrer_section` | string (enum) or null; one of `overview`, `inventory_products`, `inventory_inbound_order`, `inventory_outbound_order`, `inventory_order_history`, `inventory_stock_count`, `telemetry_report`, `incidents_list`, `incidents_new`, `incidents_file_analysis`, `account_profile`, `account_change_password`, `auth_login`, `auth_register`, `auth_forgot_password`, `auth_reset_password`, `other`, `external` | yes | none | Section the user came from, `external` for another site, or null for a direct visit. **Source:** Previous route in the app. |
+| `referrer_section` | string (enum) or null; one of `overview`, `inventory_products`, `inventory_inbound_order`, `inventory_outbound_order`, `inventory_order_history`, `inventory_stock_count`, `telemetry_report`, `reporting_weekly_performance`, `incidents_list`, `incidents_new`, `incidents_file_analysis`, `account_profile`, `account_change_password`, `auth_login`, `auth_register`, `auth_forgot_password`, `auth_reset_password`, `other`, `external` | yes | none | Section the user came from, `external` for another site, or null for a direct visit. **Source:** Previous route in the app. |
 | `device_class` | string (enum); one of `desktop`, `tablet`, `mobile` | yes | none | Kind of device. **Source:** Coarse class from the viewport width and pointer type. The user agent string is not stored. |
 | `is_authenticated` | boolean | yes | none | Whether the user was signed in. **Source:** Token present in the browser. |
 
@@ -1529,7 +1529,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "page_viewed",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "section": "inventory_outbound_order",
@@ -1559,7 +1559,7 @@ A user began a guided task (an order, an incident report, a registration).
 | Property | Type | Req. | PII | Description and how it is obtained |
 |---|---|---|---|---|
 | `flow_name` | string (enum); one of `inbound_order`, `outbound_order`, `incident_report`, `incident_file_analysis`, `registration`, `password_reset`, `password_change`, `stock_count` | yes | none | Which guided task. **Source:** Fixed per form. |
-| `entry_section` | string (enum); one of `overview`, `inventory_products`, `inventory_inbound_order`, `inventory_outbound_order`, `inventory_order_history`, `inventory_stock_count`, `telemetry_report`, `incidents_list`, `incidents_new`, `incidents_file_analysis`, `account_profile`, `account_change_password`, `auth_login`, `auth_register`, `auth_forgot_password`, `auth_reset_password`, `other` | yes | none | Section where the flow was opened. **Source:** Current section. |
+| `entry_section` | string (enum); one of `overview`, `inventory_products`, `inventory_inbound_order`, `inventory_outbound_order`, `inventory_order_history`, `inventory_stock_count`, `telemetry_report`, `reporting_weekly_performance`, `incidents_list`, `incidents_new`, `incidents_file_analysis`, `account_profile`, `account_change_password`, `auth_login`, `auth_register`, `auth_forgot_password`, `auth_reset_password`, `other` | yes | none | Section where the flow was opened. **Source:** Current section. |
 
 Example:
 
@@ -1570,7 +1570,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "flow_started",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "flow_name": "outbound_order",
@@ -1610,7 +1610,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "flow_abandoned",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "flow_name": "outbound_order",
@@ -1651,7 +1651,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "filter_applied",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "surface": "incident_list",
@@ -1695,7 +1695,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "form_validation_failed",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "form_name": "outbound_order",
@@ -1744,7 +1744,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "api_latency_recorded",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "method": "POST",
@@ -1775,7 +1775,7 @@ How fast a screen loaded for the user, with the standard web performance measure
 | Property | Type | Req. | PII | Description and how it is obtained |
 |---|---|---|---|---|
 | `route_template` | string; pattern `^/[A-Za-z0-9_{}./-]{0,119}$` | yes | none | Next.js route pattern. **Source:** FastAPI route path template, or the Next.js route pattern. Never the real URL: query strings can carry tokens. |
-| `section` | string (enum); one of `overview`, `inventory_products`, `inventory_inbound_order`, `inventory_outbound_order`, `inventory_order_history`, `inventory_stock_count`, `telemetry_report`, `incidents_list`, `incidents_new`, `incidents_file_analysis`, `account_profile`, `account_change_password`, `auth_login`, `auth_register`, `auth_forgot_password`, `auth_reset_password`, `other` | yes | none | Section of the backoffice. **Source:** Map from the route. |
+| `section` | string (enum); one of `overview`, `inventory_products`, `inventory_inbound_order`, `inventory_outbound_order`, `inventory_order_history`, `inventory_stock_count`, `telemetry_report`, `reporting_weekly_performance`, `incidents_list`, `incidents_new`, `incidents_file_analysis`, `account_profile`, `account_change_password`, `auth_login`, `auth_register`, `auth_forgot_password`, `auth_reset_password`, `other` | yes | none | Section of the backoffice. **Source:** Map from the route. |
 | `navigation_type` | string (enum); one of `initial`, `spa` | yes | none | `initial` for a full page load, `spa` for an in-app navigation. **Source:** Navigation timing. |
 | `ttfb_ms` | integer or null; >= 0 | no | none | Time to first byte. **Source:** Navigation timing. |
 | `fcp_ms` | integer or null; >= 0 | no | none | First contentful paint. **Source:** Paint timing. |
@@ -1794,7 +1794,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "page_load_recorded",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "route_template": "/backoffice/inventory/products",
@@ -1845,7 +1845,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "query_slow_detected",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "operation": "select",
@@ -1893,7 +1893,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "frontend_error_caught",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "error_source": "react_error_boundary",
@@ -1939,7 +1939,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "api_error_returned",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "method": "POST",
@@ -1984,7 +1984,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "network_request_failed",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "route_template": "/inventory/orders/inbound",
@@ -2026,7 +2026,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "email_delivery_failed",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "message_type": "password_reset",
@@ -2068,7 +2068,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "service_started",
-  "schemaVersion": "1.2.0",
+  "schemaVersion": "1.3.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "service": "api",
@@ -2442,7 +2442,7 @@ Indexes: `timestamp` (B-tree), `event_type` (B-tree) and `tags` (GIN, for contai
   "product_category": "fashion", "order_id": "2210", "exit_type": "dispatch", "quantity": 3, "stock_after": 47,
   "_envelope": {
     "eventId": "5b0f2a52-6c1e-4f7e-9d0b-3a1c8e7f4d21", "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
-    "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629", "schemaVersion": "1.2.0",
+    "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629", "schemaVersion": "1.3.0",
     "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84"
   }
 }

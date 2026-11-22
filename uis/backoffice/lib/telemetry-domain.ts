@@ -57,7 +57,7 @@ export function routeTemplate(path: string): string {
 
 export type Section =
   | "overview" | "inventory_products" | "inventory_inbound_order" | "inventory_outbound_order" | "inventory_order_history"
-  | "inventory_stock_count" | "telemetry_report" | "incidents_list" | "incidents_new" | "incidents_file_analysis" | "account_profile"
+  | "inventory_stock_count" | "telemetry_report" | "reporting_weekly_performance" | "incidents_list" | "incidents_new" | "incidents_file_analysis" | "account_profile"
   | "account_change_password" | "auth_login" | "auth_register" | "auth_forgot_password" | "auth_reset_password" | "other";
 
 const SECTIONS: Record<string, Section> = {
@@ -68,6 +68,7 @@ const SECTIONS: Record<string, Section> = {
   "/backoffice/inventory/orders": "inventory_order_history",
   "/backoffice/inventory/stock-count": "inventory_stock_count",
   "/backoffice/telemetry": "telemetry_report",
+  "/backoffice/reporting": "reporting_weekly_performance",
   "/backoffice/incidents": "incidents_list",
   "/backoffice/incidents/new": "incidents_new",
   "/backoffice/incidents/analyze": "incidents_file_analysis",

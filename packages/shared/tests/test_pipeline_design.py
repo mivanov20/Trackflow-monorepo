@@ -118,7 +118,7 @@ def test_prefect_mapping_has_a_flow_and_at_least_three_tasks_and_states():
     prefect = section("4. Mapping to Prefect")
     assert "weekly_warehouse_client_performance_flow" in prefect
     tasks = re.findall(r"\| (?:Optional )?[Tt]ask \| `(\w+)`", prefect)
-    assert {"extract_telemetry_events", "transform_weekly_rollup", "load_weekly_rollup", "write_report_snapshot"} <= set(tasks)
+    assert {"extract_telemetry_events", "prepare_telemetry_events", "assemble_weekly_warehouse_client_rollup", "load_weekly_rollup", "write_report_snapshot"} <= set(tasks)
     assert "return_state=True" in prefect and "cache_key_fn" in prefect
     for state in ("Running", "Completed", "Failed"):
         assert f"**{state}**" in prefect

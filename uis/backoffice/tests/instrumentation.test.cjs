@@ -408,7 +408,7 @@ test("domain helpers map application values to the closed vocabularies", () => {
 
 test("the browser's schema file is the one generated from the plan", () => {
   const generated = createLoader()("lib/telemetry-schema.generated.ts");
-  assert.equal(generated.TELEMETRY_SCHEMA_VERSION, "1.2.0");
+  assert.equal(generated.TELEMETRY_SCHEMA_VERSION, "1.3.0");
   for (const mandatory of ["inbound_order_created", "outbound_order_created", "stock_threshold_triggered", "direct_stock_edit_rejected", "inventory_discrepancy_detected"]) {
     assert.ok(generated.EVENT_SCHEMAS[mandatory], mandatory);
   }

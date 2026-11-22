@@ -162,7 +162,7 @@ def test_transform_uses_no_loops_over_rows():
     assert not [n for n in ast.walk(tree) if isinstance(n, (ast.For, ast.While))]
     for forbidden in ("iterrows", "itertuples", ".apply("):
         assert forbidden not in source
-    assert 'pd.to_datetime(df["timestamp"], utc=True)' in source
+    assert 'pd.to_datetime(df["timestamp"], utc=True' in source  # converted to UTC datetimes before any grouping
 
 
 # --- load: idempotent, atomic per week ------------------------------------------------------------------------------
@@ -318,8 +318,8 @@ def test_running_the_flow_twice_gives_the_same_table(seeded, two_weeks, fresh_ca
 def test_the_transform_is_not_repeated_within_the_hour_for_the_same_events(seeded, two_weeks, fresh_cache, tmp_path, monkeypatch):
     monkeypatch.setenv(config.SNAPSHOT_DIR_ENV, str(tmp_path))
     calls = []
-    original = transform.weekly_rollup
-    monkeypatch.setattr(transform, "weekly_rollup", lambda *a, **k: (calls.append(1), original(*a, **k))[1])
+    original = transform.prepare_events
+    monkeypatch.setattr(transform, "prepare_events", lambda *a, **k: (calls.append(1), original(*a, **k))[1])
     run_flow()
     run_flow()
     assert len(calls) == 1  # the second run reused the cached result
@@ -411,17 +411,60 @@ def test_a_second_run_cannot_start_while_one_is_running(seeded, two_weeks, fresh
         run_flow()
 
 
-def test_the_flow_has_the_stages_tasks_retries_cache_and_an_optional_step_of_the_design():
+def test_the_flow_has_the_subflows_tasks_retries_cache_and_optional_steps_of_the_design():
     assert pipeline.weekly_warehouse_client_performance_flow.name == "weekly_warehouse_client_performance_flow"
-    names = {t.name for t in (pipeline.open_run, pipeline.extract_telemetry_events, pipeline.transform_weekly_rollup, pipeline.load_weekly_rollup, pipeline.write_report_snapshot, pipeline.close_run)}
-    assert names == {"open_run", "extract_telemetry_events", "transform_weekly_rollup", "load_weekly_rollup", "write_report_snapshot", "close_run"}
+    subflows = {f.name for f in (
+        pipeline.extract_weekly_performance_events_flow, pipeline.transform_weekly_warehouse_client_kpis_flow,
+        pipeline.load_weekly_warehouse_client_performance_flow, pipeline.check_telemetry_silence_flow, pipeline.publish_weekly_performance_snapshot_flow,
+    )}
+    assert subflows == {
+        "extract_weekly_performance_events_flow", "transform_weekly_warehouse_client_kpis_flow", "load_weekly_warehouse_client_performance_flow",
+        "check_telemetry_silence_flow", "publish_weekly_performance_snapshot_flow",
+    }
     for task in (pipeline.open_run, pipeline.extract_telemetry_events, pipeline.load_weekly_rollup, pipeline.close_run):
         assert task.retries > 0 and task.retry_delay_seconds
-    assert pipeline.transform_weekly_rollup.cache_key_fn is pipeline.transform_cache_key
-    assert pipeline.transform_weekly_rollup.cache_expiration == timedelta(hours=1)
+    assert pipeline.prepare_telemetry_events.cache_key_fn is pipeline.transform_cache_key
+    assert pipeline.prepare_telemetry_events.cache_expiration == timedelta(hours=1)
     source = (REPO_ROOT / "data" / "pipelines" / "pipeline.py").read_text(encoding="utf-8")
-    assert "write_report_snapshot(weeks, return_state=True)" in source and "return_state=True" in source
+    assert "publish_weekly_performance_snapshot_flow(weeks, return_state=True)" in source and "check_telemetry_silence_flow(" in source
     assert 'if __name__ == "__main__":' in source
+
+
+def test_each_subflow_runs_on_its_own_with_explicit_inputs_and_outputs(seeded, fresh_cache, tmp_path, monkeypatch):
+    monkeypatch.setenv(config.SNAPSHOT_DIR_ENV, str(tmp_path))
+    start, end = window.window_bounds(WEEKS)
+    extracted_ = pipeline.extract_weekly_performance_events_flow(start, end)
+    assert set(extracted_) == {"raw", "newest"} and len(extracted_["raw"]) == 14
+
+    transformed = pipeline.transform_weekly_warehouse_client_kpis_flow(extracted_["raw"], WEEKS)
+    assert set(transformed) == {"rollups", "counters"} and rollup_values(transformed) == EXPECTED
+
+    loaded = pipeline.load_weekly_warehouse_client_performance_flow(transformed["rollups"], WEEKS)
+    assert loaded == {"totals": {"rows_inserted": 4, "rows_updated": 0, "rows_unchanged": 0, "rows_deleted": 0}, "failed_weeks": []}
+    assert kpis(table_rows(seeded)) == EXPECTED
+
+    assert len(pipeline.publish_weekly_performance_snapshot_flow(WEEKS)) == 2
+
+
+def test_the_transform_subflow_touches_no_database(fresh_cache, monkeypatch):
+    """Given events and weeks it returns the KPIs; with no engine configured at all it still works."""
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    raw = pd.DataFrame({
+        "timestamp": [utc("2026-11-10T10:00:00Z")], "event_type": ["inbound_order_created"], "value": [7.0],
+        "tags": [{"warehouse": "zaragoza", "client_id": "glowlab-cosmetics", "quantity": 7, "_envelope": {"eventId": "e1"}}],
+    })
+    result = pipeline.transform_weekly_warehouse_client_kpis_flow(raw, [WEEK_1])
+    assert result["rollups"][WEEK_1]["inbound_units_count"].tolist() == [7]
+
+
+def test_a_silent_source_is_reported_by_the_optional_check_without_stopping_the_run(engine, two_weeks, fresh_cache, tmp_path, monkeypatch):
+    monkeypatch.setenv(config.SNAPSHOT_DIR_ENV, str(tmp_path))
+    with pytest.raises(pipeline.TelemetrySilence):
+        pipeline.check_telemetry_silence_flow(0)
+    pipeline.check_telemetry_silence_flow(3)  # events arrived: no complaint
+    summary = run_flow()  # no events at all in the database
+    assert summary["status"] == "completed" and summary["optional_steps_failed"] == 1
+    assert latest_run(engine)["optional_steps_failed"] == 1
 
 
 # --- the command line ------------------------------------------------------------------------------------------------
@@ -467,7 +510,12 @@ def test_the_code_matches_the_design_document():
         "stockout_events_count", "discrepancy_events_count", "discrepancy_rate", "computed_at",
     ]  # the destination table of the company CONTEXT, column for column
     assert weekly_performance.schema == "reporting" and pipeline_runs.schema == "reporting"
-    for name in ("weekly_warehouse_client_performance_flow", "open_run", "extract_telemetry_events", "transform_weekly_rollup", "load_weekly_rollup", "close_run", "write_report_snapshot"):
+    for name in (
+        "weekly_warehouse_client_performance_flow", "extract_weekly_performance_events_flow", "transform_weekly_warehouse_client_kpis_flow",
+        "load_weekly_warehouse_client_performance_flow", "check_telemetry_silence_flow", "publish_weekly_performance_snapshot_flow",
+        "open_run", "extract_telemetry_events", "prepare_telemetry_events", "compute_inbound_volume", "compute_outbound_throughput",
+        "compute_stockout_frequency", "compute_discrepancy_rate", "load_weekly_rollup", "close_run", "write_report_snapshot",
+    ):
         assert name in design
     assert config.EVENT_TYPES == ["inbound_order_created", "outbound_order_created", "stock_threshold_triggered", "inventory_discrepancy_detected"]
     sql = (REPO_ROOT / "data" / "pipelines" / "weekly_performance" / "reporting_schema.sql").read_text(encoding="utf-8")
