@@ -1,4 +1,6 @@
 import { clearSession, redirectToLogin } from "./session";
+import { routeTemplate } from "./telemetry-domain";
+import { newRequestId, sessionAgeSeconds, track, withRequestId } from "./telemetry";
 
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_INVENTORY_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 
@@ -98,10 +100,45 @@ function fieldErrorsFrom(body: unknown): Record<string, string> {
   return result;
 }
 
+const NETWORK_FOLD_WINDOW_MS = 30_000;
+const networkFailures = new Map<string, { folded: number }>();
+
+/** Failed network calls to the same route and of the same kind within 30 s share one event with an `occurrences` count. */
+function trackNetworkFailure(path: string, failureKind: "unreachable" | "timeout", durationMs: number, requestId: string): void {
+  const route = routeTemplate(path);
+  const key = `${route}|${failureKind}`;
+  const online = typeof navigator === "undefined" || typeof navigator.onLine !== "boolean" ? true : navigator.onLine;
+  const send = (occurrences: number) =>
+    withRequestId(requestId, () => track("network_request_failed", { route_template: route, failure_kind: failureKind, duration_ms: durationMs, occurrences, online }));
+  const open = networkFailures.get(key);
+  if (open) {
+    open.folded += 1;
+    return;
+  }
+  networkFailures.set(key, { folded: 0 });
+  send(1);
+  setTimeout(() => {
+    const entry = networkFailures.get(key);
+    networkFailures.delete(key);
+    if (entry && entry.folded > 0) send(entry.folded);
+  }, NETWORK_FOLD_WINDOW_MS);
+}
+
+/** Why the API considered the session invalid, from the wording of its 401 answer. */
+function sessionExpiryReason(detail: unknown): "token_expired" | "token_invalid" | "password_changed" | "account_removed" {
+  const text = typeof detail === "string" ? detail : "";
+  if (text.includes("no longer exists")) return "account_removed";
+  if (text.includes("password was changed")) return "password_changed";
+  if (text.includes("invalid or has expired")) return "token_expired";
+  return "token_invalid";
+}
+
 export async function apiRequest<T>(
   path: string,
   options: {
     method?: "GET" | "POST" | "PUT" | "PATCH";
+    /** Correlation id sent as X-Request-ID; events caused by this call share it. Generated when omitted. */
+    requestId?: string;
     token?: string | null;
     /** JSON-serializable data, or a FormData (sent as multipart, e.g. a file upload). */
     body?: unknown;
@@ -114,7 +151,9 @@ export async function apiRequest<T>(
   } = {},
 ): Promise<T> {
   const serviceName = options.serviceName ?? "inventory";
-  const headers = new Headers({ Accept: "application/json" });
+  const requestId = options.requestId ?? newRequestId();
+  const headers = new Headers({ Accept: "application/json", "X-Request-ID": requestId });
+  const startedAt = Date.now();
   const isForm = typeof FormData !== "undefined" && options.body instanceof FormData;
   // Con FormData el navegador pone el Content-Type multipart con su boundary: no hay que fijarlo.
   if (options.body !== undefined && !isForm) headers.set("Content-Type", "application/json");
@@ -133,8 +172,10 @@ export async function apiRequest<T>(
     });
   } catch (caught) {
     if (caught instanceof DOMException && caught.name === "AbortError") {
+      trackNetworkFailure(path, "timeout", Date.now() - startedAt, requestId);
       throw new ApiError(`The ${serviceName} service is taking too long to answer. Please try again.`, 0);
     }
+    trackNetworkFailure(path, "unreachable", Date.now() - startedAt, requestId);
     throw new ApiError(`Cannot reach the ${serviceName} service. Check your connection and try again.`, 0);
   } finally {
     if (timer) clearTimeout(timer);
@@ -151,6 +192,11 @@ export async function apiRequest<T>(
   if (!response.ok) {
     if (response.status === 401 && options.token && typeof window !== "undefined") {
       // Token caducado o inválido en una llamada protegida: se borra la sesión y se vuelve a /login.
+      // El evento se registra antes de borrar la sesión para que lleve su sessionId y su userId.
+      const detail = responseBody && typeof responseBody === "object" ? (responseBody as { detail?: unknown }).detail : null;
+      withRequestId(requestId, () =>
+        track("session_expired", { reason: sessionExpiryReason(detail), session_age_seconds: sessionAgeSeconds(), route_template: routeTemplate(window.location.pathname) }),
+      );
       clearSession();
       redirectToLogin("expired");
     }

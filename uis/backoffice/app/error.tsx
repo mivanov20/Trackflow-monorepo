@@ -1,9 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
+import { trackFrontendError } from "../lib/telemetry-errors";
 
 /** Límite de error de la app: nunca muestra el error técnico, solo una salida clara. */
-export default function BackofficeError({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
+export default function BackofficeError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  useEffect(() => {
+    trackFrontendError("react_error_boundary", error, true);
+  }, [error]);
+
   return (
     <main className="login-page">
       <section className="login-panel" aria-labelledby="error-title" role="alert">

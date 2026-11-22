@@ -2,7 +2,7 @@
 
 # TrackFlow Telemetry Plan
 
-Version 1.0.0 · 37 events · companion file: [`event-schemas.json`](event-schemas.json)
+Version 1.1.0 · 38 events · companion file: [`event-schemas.json`](event-schemas.json)
 
 This is a design document. It describes what TrackFlow should measure, why, and exactly how each event looks. It contains no instrumentation code. Another developer should be able to instrument every event from this document and the JSON file alone.
 
@@ -74,12 +74,12 @@ These are prerequisites, specified in section 10. They are not hidden: an event 
 | Category | Events | Mandatory | Opportunities | Stream | Batch |
 |---|---|---|---|---|---|
 | Inventory (business) | 9 | 5 | 4 | 3 | 6 |
-| Authentication and access | 11 | 0 | 11 | 1 | 10 |
+| Authentication and access | 12 | 0 | 12 | 1 | 11 |
 | Incident management (business) | 4 | 0 | 4 | 0 | 4 |
 | Navigation and engagement | 5 | 0 | 5 | 0 | 5 |
 | Performance | 3 | 0 | 3 | 1 | 2 |
 | Errors and platform health | 5 | 0 | 5 | 4 | 1 |
-| **Total** | **37** | **5** | **32** | **9** | **28** |
+| **Total** | **38** | **5** | **33** | **9** | **29** |
 
 Coverage is deliberately broad: the inventory flow (the business core), authentication and access, incidents, navigation and abandoned flows, performance, and errors and platform health.
 
@@ -98,32 +98,33 @@ Coverage is deliberately broad: the inventory flow (the business core), authenti
 | 9 | `stock_integrity_violation_detected` | Identified opportunity | Inventory (business) | stream (within 60 seconds) | TrackFlow Tech (engineering) |
 | 10 | `login_succeeded` | Identified opportunity | Authentication and access | batch (hourly) | Ana Whitfield |
 | 11 | `login_failed` | Identified opportunity | Authentication and access | stream (within 60 seconds) | TrackFlow Tech (security) |
-| 12 | `session_expired` | Identified opportunity | Authentication and access | batch (hourly) | TrackFlow Tech |
-| 13 | `user_registered` | Identified opportunity | Authentication and access | batch (daily) | TrackFlow Tech |
-| 14 | `password_reset_requested` | Identified opportunity | Authentication and access | batch (hourly) | TrackFlow Tech (security) |
-| 15 | `password_reset_completed` | Identified opportunity | Authentication and access | batch (daily) | TrackFlow Tech |
-| 16 | `password_reset_rejected` | Identified opportunity | Authentication and access | batch (daily) | TrackFlow Tech |
-| 17 | `password_changed` | Identified opportunity | Authentication and access | batch (daily) | TrackFlow Tech (security) |
-| 18 | `password_change_rejected` | Identified opportunity | Authentication and access | batch (daily) | TrackFlow Tech (security) |
-| 19 | `access_denied` | Identified opportunity | Authentication and access | batch (hourly) | TrackFlow Tech (security) |
-| 20 | `user_role_changed` | Identified opportunity | Authentication and access | batch (daily) | TrackFlow Tech (security) |
-| 21 | `incident_created` | Identified opportunity | Incident management (business) | batch (hourly) | Valentina Cruz (Customer Experience) |
-| 22 | `incident_status_changed` | Identified opportunity | Incident management (business) | batch (hourly) | Valentina Cruz (Customer Experience) |
-| 23 | `incident_file_analyzed` | Identified opportunity | Incident management (business) | batch (daily) | Valentina Cruz (Customer Experience) |
-| 24 | `incident_file_rejected` | Identified opportunity | Incident management (business) | batch (daily) | Valentina Cruz (Customer Experience) |
-| 25 | `page_viewed` | Identified opportunity | Navigation and engagement | batch (hourly) | TrackFlow Tech |
-| 26 | `flow_started` | Identified opportunity | Navigation and engagement | batch (hourly) | TrackFlow Tech |
-| 27 | `flow_abandoned` | Identified opportunity | Navigation and engagement | batch (hourly) | TrackFlow Tech |
-| 28 | `filter_applied` | Identified opportunity | Navigation and engagement | batch (daily) | Valentina Cruz (Customer Experience) |
-| 29 | `form_validation_failed` | Identified opportunity | Navigation and engagement | batch (daily) | TrackFlow Tech |
-| 30 | `api_latency_recorded` | Identified opportunity | Performance | stream (within 60 seconds) | TrackFlow Tech |
-| 31 | `page_load_recorded` | Identified opportunity | Performance | batch (hourly) | TrackFlow Tech |
-| 32 | `query_slow_detected` | Identified opportunity | Performance | batch (daily) | TrackFlow Tech |
-| 33 | `frontend_error_caught` | Identified opportunity | Errors and platform health | stream (within 60 seconds) | TrackFlow Tech |
-| 34 | `api_error_returned` | Identified opportunity | Errors and platform health | stream (within 60 seconds) | TrackFlow Tech |
-| 35 | `network_request_failed` | Identified opportunity | Errors and platform health | batch (hourly) | Ana Whitfield |
-| 36 | `email_delivery_failed` | Identified opportunity | Errors and platform health | stream (within 60 seconds) | TrackFlow Tech |
-| 37 | `service_started` | Identified opportunity | Errors and platform health | stream (within 60 seconds) | TrackFlow Tech |
+| 12 | `login_attempt_failed` | Identified opportunity | Authentication and access | batch (hourly) | TrackFlow Tech |
+| 13 | `session_expired` | Identified opportunity | Authentication and access | batch (hourly) | TrackFlow Tech |
+| 14 | `user_registered` | Identified opportunity | Authentication and access | batch (daily) | TrackFlow Tech |
+| 15 | `password_reset_requested` | Identified opportunity | Authentication and access | batch (hourly) | TrackFlow Tech (security) |
+| 16 | `password_reset_completed` | Identified opportunity | Authentication and access | batch (daily) | TrackFlow Tech |
+| 17 | `password_reset_rejected` | Identified opportunity | Authentication and access | batch (daily) | TrackFlow Tech |
+| 18 | `password_changed` | Identified opportunity | Authentication and access | batch (daily) | TrackFlow Tech (security) |
+| 19 | `password_change_rejected` | Identified opportunity | Authentication and access | batch (daily) | TrackFlow Tech (security) |
+| 20 | `access_denied` | Identified opportunity | Authentication and access | batch (hourly) | TrackFlow Tech (security) |
+| 21 | `user_role_changed` | Identified opportunity | Authentication and access | batch (daily) | TrackFlow Tech (security) |
+| 22 | `incident_created` | Identified opportunity | Incident management (business) | batch (hourly) | Valentina Cruz (Customer Experience) |
+| 23 | `incident_status_changed` | Identified opportunity | Incident management (business) | batch (hourly) | Valentina Cruz (Customer Experience) |
+| 24 | `incident_file_analyzed` | Identified opportunity | Incident management (business) | batch (daily) | Valentina Cruz (Customer Experience) |
+| 25 | `incident_file_rejected` | Identified opportunity | Incident management (business) | batch (daily) | Valentina Cruz (Customer Experience) |
+| 26 | `page_viewed` | Identified opportunity | Navigation and engagement | batch (hourly) | TrackFlow Tech |
+| 27 | `flow_started` | Identified opportunity | Navigation and engagement | batch (hourly) | TrackFlow Tech |
+| 28 | `flow_abandoned` | Identified opportunity | Navigation and engagement | batch (hourly) | TrackFlow Tech |
+| 29 | `filter_applied` | Identified opportunity | Navigation and engagement | batch (daily) | Valentina Cruz (Customer Experience) |
+| 30 | `form_validation_failed` | Identified opportunity | Navigation and engagement | batch (daily) | TrackFlow Tech |
+| 31 | `api_latency_recorded` | Identified opportunity | Performance | stream (within 60 seconds) | TrackFlow Tech |
+| 32 | `page_load_recorded` | Identified opportunity | Performance | batch (hourly) | TrackFlow Tech |
+| 33 | `query_slow_detected` | Identified opportunity | Performance | batch (daily) | TrackFlow Tech |
+| 34 | `frontend_error_caught` | Identified opportunity | Errors and platform health | stream (within 60 seconds) | TrackFlow Tech |
+| 35 | `api_error_returned` | Identified opportunity | Errors and platform health | stream (within 60 seconds) | TrackFlow Tech |
+| 36 | `network_request_failed` | Identified opportunity | Errors and platform health | batch (hourly) | Ana Whitfield |
+| 37 | `email_delivery_failed` | Identified opportunity | Errors and platform health | stream (within 60 seconds) | TrackFlow Tech |
+| 38 | `service_started` | Identified opportunity | Errors and platform health | stream (within 60 seconds) | TrackFlow Tech |
 
 ### 3.4 Why each event exists
 
@@ -143,6 +144,7 @@ Coverage is deliberately broad: the inventory flow (the business core), authenti
 
 - Opportunity. We capture `login_succeeded` because we need to know `how many operators sign in per hour and per day, and how often they need several attempts`, which allows us to make the decision `size support coverage and shift schedules, and tune the lockout and rate limits with real data`.
 - Opportunity. We capture `login_failed` because we need to know `whether failed sign-ins are forgotten passwords or an attack (many attempts, or many different accounts)`, which allows us to make the decision `enable rate limiting or account lockout, block abusive sources, or force password resets`.
+- Opportunity. We capture `login_attempt_failed` because we need to know `whether people fail to sign in because the credentials are wrong or because the service cannot be reached, as the user experiences it`, which allows us to make the decision `put effort into the password-help path when wrong credentials dominate, and escalate to engineering when network or service failures dominate`.
 - Opportunity. We capture `session_expired` because we need to know `whether the 8-hour session matches real shift length, and how often operators are cut off mid-task`, which allows us to make the decision `change the session lifetime, add silent renewal, or warn the user before it ends`.
 - Opportunity. We capture `user_registered` because we need to know `how many accounts are created, how much optional profile data people give, and whether the legacy register route is still used`, which allows us to make the decision `simplify or extend the sign-up form, and retire `/auth/register` once nobody uses it`.
 - Opportunity. We capture `password_reset_requested` because we need to know `how many people forget their password, and whether unknown addresses are being probed`, which allows us to make the decision `review the password policy or add single sign-on, and spot account-enumeration attempts`.
@@ -216,6 +218,7 @@ One row per event. "Ready" says whether it can be instrumented today or waits fo
 | `stock_integrity_violation_detected` | backend | `services/routers/inventory.py` -> `create_stock_entry()` and `create_stock_exit()` (request-time check) plus a periodic scan job (to be built). | A check finds computed stock below zero, a movement whose warehouse differs from its SKU's warehouse, or a movement whose SKU no longer exists. | stream | After prerequisite 4 |
 | `login_succeeded` | backend | `services/auth.py` -> `login()` after `authenticate()` returns. | `POST /auth/login` (or `/auth/token`) issued a token. | batch | Yes |
 | `login_failed` | backend | `services/auth.py` -> `authenticate()`, at each of its three refusals (unknown account, wrong password, disabled account). | `POST /auth/login` (or `/auth/token`) answered 401 or 403. | stream | Yes |
+| `login_attempt_failed` | frontend | `uis/backoffice/lib/auth.ts` -> `signIn()`, in the failure branch. It is an authentication hook, so no page tracks it. | The sign-in form submitted and `signIn()` threw. | batch | Yes |
 | `session_expired` | frontend | `uis/backoffice/lib/api-client.ts` -> `apiRequest()`, in the 401 branch before `redirectToLogin()`. | A protected call answered 401 and the session was cleared. | batch | Yes |
 | `user_registered` | backend | `services/routers/users.py` -> `register_user()` and `services/auth.py` -> `register_alias()`, after the account is stored. | `POST /users` or the deprecated `POST /auth/register` created an account. | batch | Yes |
 | `password_reset_requested` | backend | `services/auth.py` -> `forgot_password()`, after the account lookup. | `POST /auth/forgot-password` was received (it always answers 200). | batch | Yes |
@@ -296,7 +299,7 @@ Every event, from the browser or from the API, has the same outer shape. Only `p
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "outbound_order_created",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": { "...": "see the event" }
 }
@@ -323,6 +326,7 @@ Every event has an allowlist: the only keys that may appear in `properties`. In 
 | `stock_integrity_violation_detected` | `warehouse`, `country`, `client_id`, `product_id`, `product_category`, `violation_type`, `detection_point`, `quantity`, `expected_warehouse*`, `observed_warehouse*`, `order_id*` |
 | `login_succeeded` | `user_role`, `method`, `failures_before_success`, `is_first_login` |
 | `login_failed` | `failure_reason`, `email_hash`, `source_network_hash*`, `attempts_in_window` |
+| `login_attempt_failed` | `failure_reason`, `attempt_number` |
 | `session_expired` | `reason`, `session_age_seconds*`, `route_template` |
 | `user_registered` | `initial_role`, `has_name`, `has_phone`, `has_address`, `registration_channel` |
 | `password_reset_requested` | `email_hash`, `account_found`, `throttled` |
@@ -391,7 +395,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "inbound_order_created",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "order_id": "1042",
@@ -443,7 +447,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "outbound_order_created",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "order_id": "2210",
@@ -496,7 +500,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "stock_threshold_triggered",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "warehouse": "los_angeles",
@@ -549,7 +553,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "direct_stock_edit_rejected",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "warehouse": "zaragoza",
@@ -604,7 +608,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "inventory_discrepancy_detected",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "warehouse": "los_angeles",
@@ -659,7 +663,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "inbound_order_rejected",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "warehouse": "zaragoza",
@@ -714,7 +718,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "outbound_order_rejected",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "warehouse": "los_angeles",
@@ -764,7 +768,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "product_created",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "warehouse": "los_angeles",
@@ -815,7 +819,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "stock_integrity_violation_detected",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "warehouse": "zaragoza",
@@ -865,7 +869,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "login_succeeded",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "user_role": "user",
@@ -908,13 +912,52 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "login_failed",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "failure_reason": "wrong_password",
     "email_hash": "9f2c4a7b1d3e5f60",
     "source_network_hash": "1a2b3c4d5e6f7081",
     "attempts_in_window": 3
+  }
+}
+```
+
+#### `login_attempt_failed`
+
+A sign-in attempt failed, seen from the browser: the user could not get in.
+
+> We capture `login_attempt_failed` because we need to know `whether people fail to sign in because the credentials are wrong or because the service cannot be reached, as the user experiences it`, which allows us to make the decision `put effort into the password-help path when wrong credentials dominate, and escalate to engineering when network or service failures dominate`.
+
+- **Class:** Identified opportunity
+- **Produced by:** frontend
+- **Fires when:** The sign-in form submitted and `signIn()` threw.
+- **Instrument at:** `uis/backoffice/lib/auth.ts` -> `signIn()`, in the failure branch. It is an authentication hook, so no page tracks it.
+- **Used by:** TrackFlow Tech; Ana Whitfield
+- **Delivery:** batch (hourly). Deciding where to invest (password help or reliability) is a weekly conversation. The security signal that needs a fast answer is the streamed `login_failed` from the API.
+- **Volume control:** One event per submit.
+- **Personal data:** none. The email and the password the user typed are never captured, not even hashed: the browser cannot hold the server pepper. Only the failure class and a counter.
+- **Notes:** This event is the user's view of a failure. It complements, and does not replace, the backend `login_failed`, which knows the internal reason and carries the keyed email hash.
+
+| Property | Type | Req. | PII | Description and how it is obtained |
+|---|---|---|---|---|
+| `failure_reason` | string (enum); one of `invalid_credentials`, `network_error`, `rate_limited`, `service_unavailable`, `storage_unavailable` | yes | none | Why the attempt failed, as the browser can tell. **Source:** HTTP status of the answer: 400, 401 or 403 is `invalid_credentials`, no answer is `network_error`, 429 is `rate_limited`, 5xx is `service_unavailable`, and a browser that refuses to store the session is `storage_unavailable`. |
+| `attempt_number` | integer; >= 1; <= 50 | yes | none | Consecutive failed attempts in this visit to the page, starting at 1. **Source:** Counter kept in memory, reset on success. |
+
+Example:
+
+```json
+{
+  "eventId": "5b0f2a52-6c1e-4f7e-9d0b-3a1c8e7f4d21",
+  "timestamp": "2026-11-21T14:03:22.418Z",
+  "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
+  "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
+  "event_type": "login_attempt_failed",
+  "schemaVersion": "1.1.0",
+  "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
+  "properties": {
+    "failure_reason": "invalid_credentials",
+    "attempt_number": 2
   }
 }
 ```
@@ -948,7 +991,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "session_expired",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "reason": "token_expired",
@@ -989,7 +1032,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "user_registered",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "initial_role": "user",
@@ -1030,7 +1073,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "password_reset_requested",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "email_hash": "0a1b2c3d4e5f6071",
@@ -1068,7 +1111,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "password_reset_completed",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "token_age_seconds": 420,
@@ -1105,7 +1148,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "password_reset_rejected",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "rejection_reason": "expired",
@@ -1142,7 +1185,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "password_changed",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "user_role": "manager",
@@ -1179,7 +1222,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "password_change_rejected",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "rejection_reason": "wrong_current_password",
@@ -1220,7 +1263,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "access_denied",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "denial_reason": "not_owner",
@@ -1262,7 +1305,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "user_role_changed",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "target_user_id": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
@@ -1304,7 +1347,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "incident_created",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "category": "lost_parcel",
@@ -1347,7 +1390,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "incident_status_changed",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "incident_id": 17,
@@ -1393,7 +1436,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "incident_file_analyzed",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "total_records": 100,
@@ -1442,7 +1485,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "incident_file_rejected",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "rejection_reason": "missing_columns",
@@ -1471,9 +1514,9 @@ A screen of the backoffice was shown.
 
 | Property | Type | Req. | PII | Description and how it is obtained |
 |---|---|---|---|---|
-| `section` | string (enum); one of `overview`, `inventory_products`, `inventory_inbound_order`, `inventory_outbound_order`, `inventory_order_history`, `incidents_list`, `incidents_new`, `incidents_file_analysis`, `account_profile`, `account_change_password`, `auth_login`, `auth_register`, `auth_forgot_password`, `auth_reset_password`, `other` | yes | none | Section of the backoffice. **Source:** Map from the route. |
+| `section` | string (enum); one of `overview`, `inventory_products`, `inventory_inbound_order`, `inventory_outbound_order`, `inventory_order_history`, `inventory_stock_count`, `incidents_list`, `incidents_new`, `incidents_file_analysis`, `account_profile`, `account_change_password`, `auth_login`, `auth_register`, `auth_forgot_password`, `auth_reset_password`, `other` | yes | none | Section of the backoffice. **Source:** Map from the route. |
 | `route_template` | string; pattern `^/[A-Za-z0-9_{}./-]{0,119}$` | yes | none | Next.js route pattern, without query string. **Source:** FastAPI route path template, or the Next.js route pattern. Never the real URL: query strings can carry tokens. |
-| `referrer_section` | string (enum) or null; one of `overview`, `inventory_products`, `inventory_inbound_order`, `inventory_outbound_order`, `inventory_order_history`, `incidents_list`, `incidents_new`, `incidents_file_analysis`, `account_profile`, `account_change_password`, `auth_login`, `auth_register`, `auth_forgot_password`, `auth_reset_password`, `other`, `external` | yes | none | Section the user came from, `external` for another site, or null for a direct visit. **Source:** Previous route in the app. |
+| `referrer_section` | string (enum) or null; one of `overview`, `inventory_products`, `inventory_inbound_order`, `inventory_outbound_order`, `inventory_order_history`, `inventory_stock_count`, `incidents_list`, `incidents_new`, `incidents_file_analysis`, `account_profile`, `account_change_password`, `auth_login`, `auth_register`, `auth_forgot_password`, `auth_reset_password`, `other`, `external` | yes | none | Section the user came from, `external` for another site, or null for a direct visit. **Source:** Previous route in the app. |
 | `device_class` | string (enum); one of `desktop`, `tablet`, `mobile` | yes | none | Kind of device. **Source:** Coarse class from the viewport width and pointer type. The user agent string is not stored. |
 | `is_authenticated` | boolean | yes | none | Whether the user was signed in. **Source:** Token present in the browser. |
 
@@ -1486,7 +1529,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "page_viewed",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "section": "inventory_outbound_order",
@@ -1515,8 +1558,8 @@ A user began a guided task (an order, an incident report, a registration).
 
 | Property | Type | Req. | PII | Description and how it is obtained |
 |---|---|---|---|---|
-| `flow_name` | string (enum); one of `inbound_order`, `outbound_order`, `incident_report`, `incident_file_analysis`, `registration`, `password_reset`, `password_change` | yes | none | Which guided task. **Source:** Fixed per form. |
-| `entry_section` | string (enum); one of `overview`, `inventory_products`, `inventory_inbound_order`, `inventory_outbound_order`, `inventory_order_history`, `incidents_list`, `incidents_new`, `incidents_file_analysis`, `account_profile`, `account_change_password`, `auth_login`, `auth_register`, `auth_forgot_password`, `auth_reset_password`, `other` | yes | none | Section where the flow was opened. **Source:** Current section. |
+| `flow_name` | string (enum); one of `inbound_order`, `outbound_order`, `incident_report`, `incident_file_analysis`, `registration`, `password_reset`, `password_change`, `stock_count` | yes | none | Which guided task. **Source:** Fixed per form. |
+| `entry_section` | string (enum); one of `overview`, `inventory_products`, `inventory_inbound_order`, `inventory_outbound_order`, `inventory_order_history`, `inventory_stock_count`, `incidents_list`, `incidents_new`, `incidents_file_analysis`, `account_profile`, `account_change_password`, `auth_login`, `auth_register`, `auth_forgot_password`, `auth_reset_password`, `other` | yes | none | Section where the flow was opened. **Source:** Current section. |
 
 Example:
 
@@ -1527,7 +1570,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "flow_started",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "flow_name": "outbound_order",
@@ -1553,7 +1596,7 @@ A user started a guided task and left without finishing it.
 
 | Property | Type | Req. | PII | Description and how it is obtained |
 |---|---|---|---|---|
-| `flow_name` | string (enum); one of `inbound_order`, `outbound_order`, `incident_report`, `incident_file_analysis`, `registration`, `password_reset`, `password_change` | yes | none | Which guided task. **Source:** Fixed per form. |
+| `flow_name` | string (enum); one of `inbound_order`, `outbound_order`, `incident_report`, `incident_file_analysis`, `registration`, `password_reset`, `password_change`, `stock_count` | yes | none | Which guided task. **Source:** Fixed per form. |
 | `last_step` | string (enum); one of `form_opened`, `field_edited`, `validation_failed`, `submit_failed` | yes | none | Last thing the user did before leaving. **Source:** Last state of the form. |
 | `elapsed_seconds` | integer; >= 0; <= 86400 | yes | none | Seconds between starting and leaving. **Source:** Now minus the `flow_started` time. |
 | `fields_touched` | integer; >= 0; <= 50 | yes | none | How many fields the user edited. **Source:** Count of changed inputs. |
@@ -1567,7 +1610,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "flow_abandoned",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "flow_name": "outbound_order",
@@ -1608,7 +1651,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "filter_applied",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "surface": "incident_list",
@@ -1638,7 +1681,7 @@ A form showed validation errors after a submit.
 
 | Property | Type | Req. | PII | Description and how it is obtained |
 |---|---|---|---|---|
-| `form_name` | string (enum); one of `inbound_order`, `outbound_order`, `incident_report`, `registration`, `login`, `password_reset_request`, `password_reset`, `password_change`, `profile_edit` | yes | none | Which form. **Source:** Fixed per form. |
+| `form_name` | string (enum); one of `inbound_order`, `outbound_order`, `incident_report`, `registration`, `login`, `password_reset_request`, `password_reset`, `password_change`, `profile_edit`, `stock_count` | yes | none | Which form. **Source:** Fixed per form. |
 | `field_names` | array of enum strings; items: `email`, `password`, `name`, `phone`, `address`, `product`, `quantity`, `reference`, `exit_type`, `tracking_number`, `title`, `description`, `category`, `origin`, `branch`, `status`, `current_password`, `new_password`, `confirm_password` | yes | none | Fields that showed an error. **Source:** Keys of the form's error state. |
 | `error_count` | integer; >= 1; <= 50 | yes | none | Number of errors shown. **Source:** Count of errors. |
 | `attempt_number` | integer; >= 1; <= 50 | yes | none | How many times the user has submitted this form visit, starting at 1. **Source:** Counter per form visit. |
@@ -1652,7 +1695,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "form_validation_failed",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "form_name": "outbound_order",
@@ -1701,7 +1744,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "api_latency_recorded",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "method": "POST",
@@ -1732,7 +1775,7 @@ How fast a screen loaded for the user, with the standard web performance measure
 | Property | Type | Req. | PII | Description and how it is obtained |
 |---|---|---|---|---|
 | `route_template` | string; pattern `^/[A-Za-z0-9_{}./-]{0,119}$` | yes | none | Next.js route pattern. **Source:** FastAPI route path template, or the Next.js route pattern. Never the real URL: query strings can carry tokens. |
-| `section` | string (enum); one of `overview`, `inventory_products`, `inventory_inbound_order`, `inventory_outbound_order`, `inventory_order_history`, `incidents_list`, `incidents_new`, `incidents_file_analysis`, `account_profile`, `account_change_password`, `auth_login`, `auth_register`, `auth_forgot_password`, `auth_reset_password`, `other` | yes | none | Section of the backoffice. **Source:** Map from the route. |
+| `section` | string (enum); one of `overview`, `inventory_products`, `inventory_inbound_order`, `inventory_outbound_order`, `inventory_order_history`, `inventory_stock_count`, `incidents_list`, `incidents_new`, `incidents_file_analysis`, `account_profile`, `account_change_password`, `auth_login`, `auth_register`, `auth_forgot_password`, `auth_reset_password`, `other` | yes | none | Section of the backoffice. **Source:** Map from the route. |
 | `navigation_type` | string (enum); one of `initial`, `spa` | yes | none | `initial` for a full page load, `spa` for an in-app navigation. **Source:** Navigation timing. |
 | `ttfb_ms` | integer or null; >= 0 | no | none | Time to first byte. **Source:** Navigation timing. |
 | `fcp_ms` | integer or null; >= 0 | no | none | First contentful paint. **Source:** Paint timing. |
@@ -1751,7 +1794,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "page_load_recorded",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "route_template": "/backoffice/inventory/products",
@@ -1802,7 +1845,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "query_slow_detected",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "operation": "select",
@@ -1836,7 +1879,7 @@ An unexpected error was intercepted in the browser.
 |---|---|---|---|---|
 | `error_source` | string (enum); one of `window_error`, `unhandled_rejection`, `react_error_boundary` | yes | none | Where the error was intercepted. **Source:** Which handler fired. |
 | `error_name` | string; pattern `^[A-Za-z0-9_$.]{1,80}$` | yes | none | Class of the error, for example `TypeError`. **Source:** `error.name`. |
-| `error_fingerprint` | string; pattern `^[0-9a-f]{16}$` | yes | none | Hash of the normalised stack, to group the same error. **Source:** First 16 hex characters of SHA-256 of the stack frames with line numbers kept and values removed. |
+| `error_fingerprint` | string; pattern `^[0-9a-f]{16}$` | yes | none | Hash of the normalised stack, to group the same error. **Source:** 16 hex characters of a 64-bit FNV-1a hash of the normalised stack (file paths without query strings, line numbers kept, values removed). It only groups repeats, so it does not need to be cryptographic and can be computed synchronously at capture time. |
 | `route_template` | string; pattern `^/[A-Za-z0-9_{}./-]{0,119}$` | yes | none | Route where it happened. **Source:** FastAPI route path template, or the Next.js route pattern. Never the real URL: query strings can carry tokens. |
 | `occurrences` | integer; >= 1 | yes | none | How many identical errors this event stands for. **Source:** Counter of folded duplicates. |
 | `handled_by_boundary` | boolean | yes | none | Whether a React error boundary showed the fallback screen. **Source:** True when the boundary fired. |
@@ -1850,7 +1893,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "frontend_error_caught",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "error_source": "react_error_boundary",
@@ -1896,7 +1939,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "api_error_returned",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "method": "POST",
@@ -1941,7 +1984,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "network_request_failed",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "route_template": "/inventory/orders/inbound",
@@ -1983,7 +2026,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "email_delivery_failed",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "message_type": "password_reset",
@@ -2025,7 +2068,7 @@ Example:
   "sessionId": "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13",
   "userId": "b9048e2a-ad79-4f10-b831-e5e2f9762629",
   "event_type": "service_started",
-  "schemaVersion": "1.0.0",
+  "schemaVersion": "1.1.0",
   "requestId": "e1a7c4d9-52b3-4c08-a6f1-7d9b0c3e5a84",
   "properties": {
     "service": "api",
@@ -2077,6 +2120,7 @@ Nine events stream. Everything else is batched. `eventId` makes both paths idemp
 | `outbound_order_rejected` | batch | hourly | A recount is scheduled for the next shift or day. Hourly batches are enough, and the operator already sees the error immediately. |
 | `product_created` | batch | daily | Catalogue growth is a weekly commercial and space-planning conversation. A daily batch is plenty. |
 | `login_succeeded` | batch | hourly | Staffing and support cover are planned over days. The security question (attacks) is answered by `login_failed`, which is streamed. |
+| `login_attempt_failed` | batch | hourly | Deciding where to invest (password help or reliability) is a weekly conversation. The security signal that needs a fast answer is the streamed `login_failed` from the API. |
 | `session_expired` | batch | hourly | Changing the session lifetime is a configuration decision taken after looking at days of data, not minutes. |
 | `user_registered` | batch | daily | Sign-up volume is a daily or weekly figure and no one acts on a single registration. |
 | `password_reset_requested` | batch | hourly | The decision is a policy review. The urgent attack signal is already covered by the streamed `login_failed`. |
@@ -2107,6 +2151,7 @@ Some events fire constantly. Without a rule, they would outnumber everything els
 |---|---|
 | `stock_threshold_triggered` | Edge-triggered: one event per crossing, not one per outbound order while the stock stays low. The rule re-arms when stock returns to the minimum or above. |
 | `login_failed` | Never dropped or sampled. Detection depends on counting every attempt. The cost is bounded by the login route's own rate. |
+| `login_attempt_failed` | One event per submit. |
 | `page_viewed` | One event per route change. Ignore a repeat of the same route within 2 seconds (double render, redirect). |
 | `flow_started` | At most once per form visit. |
 | `flow_abandoned` | At most once per flow visit. |
@@ -2222,7 +2267,7 @@ This section fixes the contract between producers (API, browser) and the collect
 - **Streamed events** (`frontend_error_caught`) are flushed immediately instead of waiting for the timer.
 - **Offline:** keep at most 200 events (oldest dropped first) and retry with exponential backoff, starting at 2 s and capped at 5 minutes, with jitter.
 - **`requestId`:** created per user action in the browser and sent as the `X-Request-ID` header on the API call it triggers, so frontend and backend events of one action join.
-- **`sessionId`:** created at sign-in, kept in memory (not in `localStorage`), discarded at sign-out or when the tab closes.
+- **`sessionId`:** created at sign-in, kept in `sessionStorage` (never in `localStorage`, so it dies with the tab), discarded at sign-out.
 - **Opt-out:** if `navigator.doNotTrack` is `1`, only the events required for security and reliability (`login_failed` is server-side anyway, `frontend_error_caught`, `network_request_failed`) are sent.
 
 ### 9.4 Backend producer
@@ -2263,4 +2308,53 @@ python docs/telemetry/build.py
 python -m pytest packages/shared/tests/test_telemetry_docs.py
 ```
 
-The test validates every example against its schema, checks that the five mandatory metrics are present and exact, that every event has a hypothesis and a decision, and that the committed files are up to date. To add an event: add it to `events.py` with its hypothesis, decision, allowlist, personal-data note, delivery mode and example, run the build, and review the diff.
+The test validates every example against its schema, checks that the five mandatory metrics are present and exact, that every event has a hypothesis and a decision, and that the committed files are up to date. The build also writes `uis/backoffice/lib/telemetry-schema.generated.ts`, the allowlists the browser checks every event against before queueing it. To add an event: add it to `events.py` with its hypothesis, decision, allowlist, personal-data note, delivery mode and example, run the build, and review the diff.
+
+## 12. Phase 2 implementation status
+
+Phase 2 builds the capture half in the backoffice and a stub receiver in the API. The stub, `POST /telemetry/events`, validates the envelope with the `TelemetryEvent` model, logs the batch, answers `200` with `{"received": N}` and stores nothing. It is open (no authentication) because `sendBeacon` cannot carry an `Authorization` header; the 202 answer, per-event rejection list, authentication and rate limits of section 9.2 arrive with the persistent collector in Phase 3, and the browser needs no change when that happens because it reads the address from `NEXT_PUBLIC_TELEMETRY_ENDPOINT`.
+
+Every event passes through one function, `track(eventType, properties)` in `uis/backoffice/lib/telemetry.ts`. It adds the envelope, validates the event against the generated allowlist (an unknown event, a missing required property or an unknown property drops the event), queues it, and sends batches every 10 seconds or at 20 events, with `sendBeacon` when the tab is hidden and up to three retries with exponential waiting.
+
+Until the backend producer exists, the backoffice also produces the backend-sourced events whose moment it can observe from an API response. When Phase 3 moves a producer to the server, remove that event from the browser, because the two producers would count it twice (each has its own `eventId`).
+
+| Event | Class | Phase 2 | Where |
+|---|---|---|---|
+| `inbound_order_created` | Mandatory | Backoffice (`uis/backoffice`) | `lib/inventory.ts` -> `inventoryApi.createInboundOrder` |
+| `outbound_order_created` | Mandatory | Backoffice (`uis/backoffice`) | `lib/inventory.ts` -> `inventoryApi.createOutboundOrder` |
+| `stock_threshold_triggered` | Mandatory | Backoffice (`uis/backoffice`) | `lib/inventory.ts` -> `inventoryApi.createOutboundOrder` (after the exit) |
+| `direct_stock_edit_rejected` | Mandatory | Backoffice (`uis/backoffice`) | `lib/inventory.ts` -> `inventoryApi.createProduct` (stock-field guard) |
+| `inventory_discrepancy_detected` | Mandatory | Backoffice (`uis/backoffice`) | `lib/inventory.ts` -> `inventoryApi.recordStockCount` (new stock-count page) |
+| `inbound_order_rejected` | Identified opportunity | Backoffice (`uis/backoffice`) | `lib/inventory.ts` -> `inventoryApi.createInboundOrder` (failure branch) |
+| `outbound_order_rejected` | Identified opportunity | Backoffice (`uis/backoffice`) | `lib/inventory.ts` -> `inventoryApi.createOutboundOrder` (failure branch) |
+| `product_created` | Identified opportunity | Backoffice (`uis/backoffice`) | `lib/inventory.ts` -> `inventoryApi.createProduct` |
+| `stock_integrity_violation_detected` | Identified opportunity | Backoffice (`uis/backoffice`) | `lib/inventory.ts` -> `checkOrderIntegrity` (response check) |
+| `login_succeeded` | Identified opportunity | Backend, Phase 3 | Needs a server-side producer. |
+| `login_failed` | Identified opportunity | Backend, Phase 3 | Needs a server-side producer. |
+| `login_attempt_failed` | Identified opportunity | Backoffice (`uis/backoffice`) | `lib/auth.ts` -> `signIn` (failure branch) |
+| `session_expired` | Identified opportunity | Backoffice (`uis/backoffice`) | `lib/api-client.ts` -> `apiRequest` (401 branch) |
+| `user_registered` | Identified opportunity | Backoffice (`uis/backoffice`) | `lib/auth.ts` -> `registerUser` |
+| `password_reset_requested` | Identified opportunity | Backend, Phase 3 | Needs a server-side producer. |
+| `password_reset_completed` | Identified opportunity | Backend, Phase 3 | Needs a server-side producer. |
+| `password_reset_rejected` | Identified opportunity | Backend, Phase 3 | Needs a server-side producer. |
+| `password_changed` | Identified opportunity | Backoffice (`uis/backoffice`) | `lib/auth.ts` -> `changePassword` |
+| `password_change_rejected` | Identified opportunity | Backend, Phase 3 | Needs a server-side producer. |
+| `access_denied` | Identified opportunity | Backend, Phase 3 | Needs a server-side producer. |
+| `user_role_changed` | Identified opportunity | Backend, Phase 3 | Needs a server-side producer. |
+| `incident_created` | Identified opportunity | Backoffice (`uis/backoffice`) | `lib/incidents.ts` -> `incidentsApi.create` |
+| `incident_status_changed` | Identified opportunity | Backoffice (`uis/backoffice`) | `lib/incidents.ts` -> `incidentsApi.updateStatus` |
+| `incident_file_analyzed` | Identified opportunity | Backoffice (`uis/backoffice`) | `lib/incident-analysis.ts` -> `analysisApi.analyze` |
+| `incident_file_rejected` | Identified opportunity | Backoffice (`uis/backoffice`) | `lib/incident-analysis.ts` -> `analysisApi.analyze` (failure branch) |
+| `page_viewed` | Identified opportunity | Backoffice (`uis/backoffice`) | `app/components/TelemetryProvider.tsx` (route changes) |
+| `flow_started` | Identified opportunity | Backoffice (`uis/backoffice`) | `app/components/TelemetryProvider.tsx` (first interaction with a form) |
+| `flow_abandoned` | Identified opportunity | Backoffice (`uis/backoffice`) | `app/components/TelemetryProvider.tsx` (route change or page hide before completion) |
+| `filter_applied` | Identified opportunity | Backoffice (`uis/backoffice`) | `lib/incidents.ts` -> `incidentsApi.list` (debounced) |
+| `form_validation_failed` | Identified opportunity | Backoffice (`uis/backoffice`) | `app/components/TelemetryProvider.tsx` (submit followed by invalid fields) |
+| `api_latency_recorded` | Identified opportunity | Backend, Phase 3 | Needs a server-side producer. |
+| `page_load_recorded` | Identified opportunity | Backoffice (`uis/backoffice`) | `app/components/TelemetryProvider.tsx` (Web Vitals) |
+| `query_slow_detected` | Identified opportunity | Backend, Phase 3 | Needs a server-side producer. |
+| `frontend_error_caught` | Identified opportunity | Backoffice (`uis/backoffice`) | `app/components/TelemetryProvider.tsx` and `app/error.tsx` |
+| `api_error_returned` | Identified opportunity | Backend, Phase 3 | Needs a server-side producer. |
+| `network_request_failed` | Identified opportunity | Backoffice (`uis/backoffice`) | `lib/api-client.ts` -> `apiRequest` (network failure branch) |
+| `email_delivery_failed` | Identified opportunity | Backend, Phase 3 | Needs a server-side producer. |
+| `service_started` | Identified opportunity | Backend, Phase 3 | Needs a server-side producer. |

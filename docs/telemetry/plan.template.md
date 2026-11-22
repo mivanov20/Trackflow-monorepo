@@ -264,7 +264,7 @@ This section fixes the contract between producers (API, browser) and the collect
 - **Streamed events** (`frontend_error_caught`) are flushed immediately instead of waiting for the timer.
 - **Offline:** keep at most 200 events (oldest dropped first) and retry with exponential backoff, starting at 2 s and capped at 5 minutes, with jitter.
 - **`requestId`:** created per user action in the browser and sent as the `X-Request-ID` header on the API call it triggers, so frontend and backend events of one action join.
-- **`sessionId`:** created at sign-in, kept in memory (not in `localStorage`), discarded at sign-out or when the tab closes.
+- **`sessionId`:** created at sign-in, kept in `sessionStorage` (never in `localStorage`, so it dies with the tab), discarded at sign-out.
 - **Opt-out:** if `navigator.doNotTrack` is `1`, only the events required for security and reliability (`login_failed` is server-side anyway, `frontend_error_caught`, `network_request_failed`) are sent.
 
 ### 9.4 Backend producer
@@ -305,4 +305,14 @@ python docs/telemetry/build.py
 python -m pytest packages/shared/tests/test_telemetry_docs.py
 ```
 
-The test validates every example against its schema, checks that the five mandatory metrics are present and exact, that every event has a hypothesis and a decision, and that the committed files are up to date. To add an event: add it to `events.py` with its hypothesis, decision, allowlist, personal-data note, delivery mode and example, run the build, and review the diff.
+The test validates every example against its schema, checks that the five mandatory metrics are present and exact, that every event has a hypothesis and a decision, and that the committed files are up to date. The build also writes `uis/backoffice/lib/telemetry-schema.generated.ts`, the allowlists the browser checks every event against before queueing it. To add an event: add it to `events.py` with its hypothesis, decision, allowlist, personal-data note, delivery mode and example, run the build, and review the diff.
+
+## 12. Phase 2 implementation status
+
+Phase 2 builds the capture half in the backoffice and a stub receiver in the API. The stub, `POST /telemetry/events`, validates the envelope with the `TelemetryEvent` model, logs the batch, answers `200` with `{"received": N}` and stores nothing. It is open (no authentication) because `sendBeacon` cannot carry an `Authorization` header; the 202 answer, per-event rejection list, authentication and rate limits of section 9.2 arrive with the persistent collector in Phase 3, and the browser needs no change when that happens because it reads the address from `NEXT_PUBLIC_TELEMETRY_ENDPOINT`.
+
+Every event passes through one function, `track(eventType, properties)` in `uis/backoffice/lib/telemetry.ts`. It adds the envelope, validates the event against the generated allowlist (an unknown event, a missing required property or an unknown property drops the event), queues it, and sends batches every 10 seconds or at 20 events, with `sendBeacon` when the tab is hidden and up to three retries with exponential waiting.
+
+Until the backend producer exists, the backoffice also produces the backend-sourced events whose moment it can observe from an API response. When Phase 3 moves a producer to the server, remove that event from the browser, because the two producers would count it twice (each has its own `eventId`).
+
+{{FRONTEND_STATUS}}

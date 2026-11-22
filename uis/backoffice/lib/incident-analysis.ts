@@ -1,4 +1,6 @@
 import { ApiError, GENERIC_ERROR_MESSAGE, apiRequest } from "./api-client";
+import { EVENT_SCHEMAS } from "./telemetry-schema.generated";
+import { newRequestId, track, withRequestId } from "./telemetry";
 
 /** Un valor del desglose (categoría, estado o país) con su recuento y su porcentaje sobre los registros válidos. */
 export interface Breakdown {
@@ -84,12 +86,49 @@ export function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** Rules the telemetry schema knows; a rule the browser has not heard of would invalidate the whole event. */
+const KNOWN_RULES = new Set(Object.keys(EVENT_SCHEMAS.incident_file_analyzed.properties.invalid_by_rule.properties ?? {}));
+
+/** Why a refused file was refused, from the status and the wording of the API's answer. */
+function rejectionReason(error: ApiError): string {
+  if (error.status === 413) return "too_large";
+  if (error.status === 415) return /multipart/i.test(error.message) ? "not_multipart" : "not_csv";
+  if (error.status === 400) return /empty/i.test(error.message) ? "empty_file" : "no_file";
+  if (/utf-8/i.test(error.message)) return "invalid_encoding";
+  if (/column/i.test(error.message)) return "missing_columns";
+  if (/header|no data rows/i.test(error.message)) return "no_data_rows";
+  return "malformed_csv";
+}
+
 export const analysisApi = {
   /** Sube el CSV como multipart/form-data (campo `file`) y devuelve el resumen. */
-  analyze(token: string, file: File): Promise<AnalysisSummary> {
+  async analyze(token: string, file: File): Promise<AnalysisSummary> {
     const body = new FormData();
     body.append("file", file, file.name);
-    return apiRequest<AnalysisSummary>("/api/incidents/analyze", { method: "POST", token, body, ...REQUEST_OPTIONS });
+    const requestId = newRequestId();
+    const startedAt = performance.now();
+    try {
+      const summary = await apiRequest<AnalysisSummary>("/api/incidents/analyze", { method: "POST", token, body, requestId, ...REQUEST_OPTIONS });
+      // Aggregates only: the file name, its rows and the customer emails never leave the analysis.
+      const invalidByRule = Object.fromEntries(summary.invalid_breakdown.filter((rule) => KNOWN_RULES.has(rule.rule)).map((rule) => [rule.rule, rule.count]));
+      withRequestId(requestId, () =>
+        track("incident_file_analyzed", {
+          total_records: summary.total_records,
+          valid_records: summary.valid_records,
+          invalid_records: summary.invalid_records,
+          invalid_by_rule: invalidByRule,
+          average_satisfaction: summary.satisfaction.average,
+          duration_ms: Math.round(performance.now() - startedAt),
+          file_size_bytes: file.size,
+        }),
+      );
+      return summary;
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.status >= 400 && caught.status < 500 && caught.status !== 401 && caught.status !== 403) {
+        withRequestId(requestId, () => track("incident_file_rejected", { rejection_reason: rejectionReason(caught), http_status: caught.status, file_size_bytes: file.size }));
+      }
+      throw caught;
+    }
   },
   /** Texto del CSV del último análisis (`metric,value`, una fila por métrica). */
   exportResults(token: string): Promise<string> {
