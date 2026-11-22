@@ -16,3 +16,7 @@ data/raw/incidents-trackflow.csv
 
 # Optional JSON snapshots written by the weekly performance pipeline
 data/process/weekly-performance-snapshots/
+
+# Nightly telemetry exports: backups for audit and recovery, never committed
+data/raw/telemetry_*.csv
+data/raw/telemetry_*.csv.part
