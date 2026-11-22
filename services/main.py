@@ -10,6 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from .accounts import AccountStoreError
 from .auth import ACCOUNT_SERVICE_UNAVAILABLE, router as auth_router
 from .database import SERVICE_UNAVAILABLE_MESSAGE, create_db_and_tables, ensure_user_uid_columns
+from .routers.incident_analysis import router as incident_analysis_router, validate_analysis_config
 from .routers.incidents import router as incidents_router
 from .routers.inventory import router as inventory_router
 from .routers.profiles import router as profiles_router
@@ -27,6 +28,7 @@ async def lifespan(_: FastAPI):
     """Valida la configuración de seguridad y prepara la base de datos al iniciar el servicio."""
     validate_security_config()
     validate_email_config()
+    validate_analysis_config()
     create_db_and_tables()
     ensure_user_uid_columns()
     yield
@@ -78,6 +80,7 @@ app.include_router(users_router)
 app.include_router(profiles_router)
 app.include_router(inventory_router)
 app.include_router(incidents_router)
+app.include_router(incident_analysis_router)
 
 
 @app.get("/health", tags=["health"])
