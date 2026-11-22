@@ -6,27 +6,45 @@ Las rutas viven bajo `/auth`. Los usuarios se gestionan en `/users` y los perfil
 import logging
 from urllib.parse import parse_qs
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.concurrency import run_in_threadpool
 from fastapi.security import OAuth2PasswordBearer
 
-from .account_schemas import LoginRequest, SessionUser, TokenResponse, UserCreate, UserWithProfile
+from .account_schemas import (
+    ChangePasswordRequest,
+    ChangePasswordResponse,
+    ForgotPasswordRequest,
+    LoginRequest,
+    MessageResponse,
+    ResetPasswordRequest,
+    SessionUser,
+    TokenResponse,
+    UserCreate,
+    UserWithProfile,
+)
 from .accounts import (
     AccountStoreError,
     EmailAlreadyRegisteredError,
     Role,
     User,
+    complete_password_reset,
     create_user,
     get_profile_by_user_id,
     get_user_by_email,
     get_user_by_id,
+    register_reset_request,
     update_user,
 )
+from .mailer import build_reset_email, reset_link, send_email
 from .security import (
     InvalidTokenError,
     burn_password_check,
     create_access_token,
+    create_reset_token,
     decode_access_token,
+    decode_reset_token,
+    reset_cooldown_seconds,
+    reset_token_lifetime,
     token_lifetime,
     verify_password,
 )
@@ -39,6 +57,9 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
 
 ACCOUNT_SERVICE_UNAVAILABLE = "The account service is temporarily unavailable. Please try again in a moment."
 EMAIL_TAKEN = "An account with this email already exists."
+# Misma respuesta exista o no la cuenta: no se puede averiguar qué correos están registrados.
+FORGOT_PASSWORD_MESSAGE = "If that address is registered, you will receive a reset link shortly."
+INVALID_RESET_LINK = "This reset link is invalid or has expired. Request a new one."
 
 
 def _unauthorized(detail: str) -> HTTPException:
@@ -53,17 +74,22 @@ def get_current_user(token: str | None = Depends(oauth2_scheme)) -> User:
     if token is None:
         raise _unauthorized("Authentication is required.")
     try:
-        user_id = decode_access_token(token)
+        claims = decode_access_token(token)
     except InvalidTokenError as error:
         raise _unauthorized("Your session is invalid or has expired. Please log in again.") from error
     try:
-        user = get_user_by_id(user_id)
+        user = get_user_by_id(claims.user_id)
     except AccountStoreError as error:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=ACCOUNT_SERVICE_UNAVAILABLE) from error
     if user is None:
         raise _unauthorized("The account for this session no longer exists.")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account is disabled.")
+    if user.password_changed_at is not None and (
+        claims.issued_at is None or claims.issued_at < int(user.password_changed_at.timestamp())
+    ):
+        # La contraseña cambió después de emitir este token: se cierra esa sesión.
+        raise _unauthorized("Your password was changed. Please sign in again.")
     return user
 
 
@@ -146,3 +172,49 @@ def register_alias(payload: UserCreate) -> dict:
     except EmailAlreadyRegisteredError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=EMAIL_TAKEN) from error
     return {**user.model_dump(), "profile": profile.model_dump()}
+
+
+@router.post("/forgot-password", response_model=MessageResponse)
+def forgot_password(payload: ForgotPasswordRequest, background_tasks: BackgroundTasks) -> dict[str, str]:
+    """Pide un enlace de recuperación. Siempre responde 200 con el mismo mensaje, exista o no el email.
+
+    El correo se envía en segundo plano para que la respuesta no tarde distinto si la cuenta existe.
+    """
+    user = get_user_by_email(payload.email)
+    if user is not None and user.is_active:
+        reset = create_reset_token(user.id)
+        if register_reset_request(user.id, reset.jti, reset.expires_at, reset_cooldown_seconds()):
+            profile = get_profile_by_user_id(user.id)
+            minutes = round(reset_token_lifetime().total_seconds() / 60)
+            message = build_reset_email(user.email, profile.name if profile else "", reset_link(reset.token), minutes)
+            background_tasks.add_task(send_email, message)
+    return {"message": FORGOT_PASSWORD_MESSAGE}
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+def reset_password(payload: ResetPasswordRequest) -> dict[str, str]:
+    """Cambia la contraseña con el token del correo. 400 si es inválido, caducó o ya se usó."""
+    try:
+        user_id, jti = decode_reset_token(payload.token)
+    except InvalidTokenError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=INVALID_RESET_LINK) from error
+    if complete_password_reset(user_id, jti, payload.new_password) is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=INVALID_RESET_LINK)
+    return {"message": "Your password was updated. You can now sign in with it."}
+
+
+@router.post("/change-password", response_model=ChangePasswordResponse)
+def change_password(payload: ChangePasswordRequest, current_user: User = Depends(get_current_user)) -> dict[str, object]:
+    """Cambia la contraseña de la sesión actual, tras comprobar la actual. Devuelve un token nuevo."""
+    matches, _ = verify_password(payload.current_password, current_user.hashed_password)
+    if not matches:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Your current password is incorrect.")
+    if payload.new_password == payload.current_password:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose a new password that is different from your current one.")
+    update_user(current_user.id, password=payload.new_password, revoke_sessions=True)
+    return {
+        "message": "Your password was changed.",
+        "access_token": create_access_token(current_user.id),
+        "token_type": "bearer",
+        "expires_in": int(token_lifetime().total_seconds()),
+    }
