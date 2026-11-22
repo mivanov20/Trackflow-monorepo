@@ -129,6 +129,7 @@ FRONTEND_IMPLEMENTATION = {
     "stock_integrity_violation_detected": "`lib/inventory.ts` -> `checkOrderIntegrity` (response check)",
     "session_expired": "`lib/api-client.ts` -> `apiRequest` (401 branch)",
     "login_attempt_failed": "`lib/auth.ts` -> `signIn` (failure branch)",
+    "login_succeeded": "`lib/auth.ts` -> `signIn` (success branch)",
     "user_registered": "`lib/auth.ts` -> `registerUser`",
     "password_changed": "`lib/auth.ts` -> `changePassword`",
     "incident_created": "`lib/incidents.ts` -> `incidentsApi.create`",

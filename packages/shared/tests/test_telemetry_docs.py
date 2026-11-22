@@ -285,3 +285,30 @@ def test_the_frontend_was_not_touched_by_the_storage_phase():
     """Phase 3 is backend only: the browser's schema file is generated from the same plan and must still match it."""
     text = (BACKOFFICE / "lib" / "telemetry-schema.generated.ts").read_text(encoding="utf-8")
     assert f'TELEMETRY_SCHEMA_VERSION = "{ev.SCHEMA_VERSION}"' in text
+
+
+# --- Phase 4: the operational report ----------------------------------------------------------
+
+
+def test_the_plan_documents_every_metric_of_the_report():
+    source = (REPO_ROOT / "services" / "telemetry" / "analysis.py").read_text(encoding="utf-8")
+    keys = re.findall(r'^    "(\w+)": \w+,$', source.split("METRICS = {")[1], re.M)
+    assert len(keys) >= 3
+    section = PLAN.split("## 14. Phase 4: the operational report")[1]
+    for key in keys:
+        assert f"`{key}`" in section, key
+    for needle in ("pd.to_datetime(..., utc=True)", "60 seconds", "X-Cache", "`422`", "last 7 days"):
+        assert needle in section, needle
+
+
+def test_the_metrics_read_only_events_of_the_plan():
+    import ast
+
+    tree = ast.parse((REPO_ROOT / "services" / "telemetry" / "analysis.py").read_text(encoding="utf-8"))
+    types = {e["type"] for e in ev.EVENTS}
+    requested = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "_load" and len(node.args) == 5:
+            requested |= {item.value for item in node.args[4].elts}
+    assert {"page_load_recorded", "network_request_failed", "frontend_error_caught", "login_attempt_failed", "login_succeeded"} <= requested
+    assert requested <= types, f"events not in the plan: {requested - types}"

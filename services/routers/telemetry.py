@@ -10,13 +10,18 @@ Each item is validated inside the handler instead, so valid events are persisted
 
 import logging
 import os
+from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends
+import pandas as pd
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
-from ..database import get_session
+from ..auth import get_current_user
+from ..database import SERVICE_UNAVAILABLE_MESSAGE, get_session
+from ..accounts import User
+from ..telemetry.report import InvalidPeriod, get_report
 from ..telemetry_schemas import MAX_EVENTS_PER_BATCH
 from ..telemetry_store import ingest
 
@@ -67,3 +72,27 @@ def receive_events(body: TelemetryIngestBody, session: Session = Depends(get_ses
     result = TelemetryIngestResult(received=len(body.events), stored=stored, rejected=len(rejections))
     logger.info("Telemetry batch: received=%d stored=%d rejected=%d", result.received, result.stored, result.rejected)
     return result
+
+
+@router.get("/report")
+def telemetry_report(
+    response: Response,
+    start_date: datetime | None = Query(default=None, description="ISO 8601, inclusive. Default: end_date minus 7 days."),
+    end_date: datetime | None = Query(default=None, description="ISO 8601, exclusive. Default: now."),
+    session: Session = Depends(get_session),
+    _user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Operational report of the system (volume, errors, latency, availability, sign-in health) for a period.
+
+    The metrics come from the pipeline in `services/telemetry/analysis.py` and are cached for 60 seconds per period,
+    so calling this endpoint again does not recalculate. `X-Cache` says whether the answer came from the cache.
+    """
+    try:
+        report, cache_hit = get_report(session, start_date, end_date)
+    except InvalidPeriod as error:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
+    except pd.errors.DatabaseError as error:
+        logger.exception("Telemetry report could not read the database")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=SERVICE_UNAVAILABLE_MESSAGE) from error
+    response.headers["X-Cache"] = "HIT" if cache_hit else "MISS"
+    return report

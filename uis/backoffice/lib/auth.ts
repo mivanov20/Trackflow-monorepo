@@ -129,6 +129,8 @@ export async function signIn(email: string, password: string): Promise<LoginResp
   try {
     const session = await loginUser({ email, password });
     if (!saveSession(session)) throw new StorageUnavailableError();
+    // Recorded after the session is saved so the event carries its sessionId and userId. The role is a closed value.
+    track("login_succeeded", { user_role: session.user.role, method: "password", failures_before_success: failedSignIns });
     failedSignIns = 0;
     return session;
   } catch (caught) {
