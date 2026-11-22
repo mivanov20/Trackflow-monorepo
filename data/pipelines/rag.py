@@ -89,12 +89,36 @@ def build_messages(question: str, context: list[dict]) -> list[dict]:
     return [{"role": "system", "content": active_system_prompt.get() or SYSTEM_PROMPT}, {"role": "user", "content": user}]
 
 
+# Who wants the answer AS IT IS GENERATED (the chat over WebSocket). An object with `on_token(text)` and, optionally, `on_open(close)`; none by default, and then nothing changes.
+token_sink: ContextVar = ContextVar("rag_token_sink", default=None)
+
+
+def _stream_answer(model: str, messages: list[dict], sink) -> str:
+    """The same model call, streamed: every piece of text goes to the sink as it arrives. If the sink raises (the generation was cancelled) the connection to the model is closed
+    at once and the exception goes on: no further text is requested."""
+    pieces: list[str] = []
+    iterator = model_client.stream_chat({"model": model, "messages": messages, "temperature": 0, "max_tokens": 500}, on_open=getattr(sink, "on_open", None))
+    try:
+        for text in iterator:
+            sink.on_token(text)
+            pieces.append(text)
+    finally:
+        iterator.close()
+    answer = "".join(pieces).strip()
+    if not answer:
+        raise model_client.ModelServiceError("The generation model returned an empty answer.")
+    return answer
+
+
 def generate_answer(question: str, context: list[dict]) -> str:
     """Asks the GENERATION model (a chat model, never the embeddings model) to answer from `context`. With no context it still
     answers, honestly: that the knowledge base has no information."""
     model = config.generation_model()
     if not model:
         raise model_client.ModelServiceError("The generation model is not configured: set LLM_MODEL.")
+    sink = token_sink.get()
+    if sink is not None:
+        return _stream_answer(model, build_messages(question, context), sink)
     body = model_client.post("/chat/completions", {"model": model, "messages": build_messages(question, context), "temperature": 0, "max_tokens": 500})
     try:
         answer = body["choices"][0]["message"]["content"]

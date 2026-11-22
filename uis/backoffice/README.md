@@ -91,3 +91,7 @@ The page also carries the **approval**: each department's owner decides on their
 ## Real-time RFP notifications
 
 The Operations desk has a **New RFP tickets** panel that shows a ticket the moment the intake accepts an RFP (Server-Sent Events, event `rfp_ticket_created`), without a reload. The stream is read with `fetch` + `ReadableStream` (JWT in `Authorization`), reconnects with progressive backoff, and recovers what was missed by refetching the ticket list once per connection (plus `Last-Event-ID`), deduplicating by `ticket_id`. The RFP intake list updates live too. See [docs/realtime/rfp-notifications.md](../../docs/realtime/rfp-notifications.md).
+
+## WebSocket chat with the support agent
+
+"Ask TrackFlow" (`/backoffice/knowledge`) is a conversation over a WebSocket bound to a chat session: the agent's answer appears token by token, typing a new message while it writes interrupts it (the partial message stays, marked interrupted, and the redirected reply is a new message), and after a drop the page reconnects with progressive backoff to the same session and restores the conversation. See [docs/realtime/chat-websocket.md](../../docs/realtime/chat-websocket.md); `python scripts/chat_demo_server.py` runs the API with a stand-in model to try it without credentials.

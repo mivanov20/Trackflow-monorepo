@@ -14,12 +14,14 @@ import uuid
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from threading import Lock
+from typing import Callable
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.sqlite import SqliteSaver
 from sqlalchemy import Engine
 
 from .. import database
+from . import streaming
 from .graph import AgentBuildError, build_graph, compile_graph
 from .guardrails import events as guard_events
 from .guardrails import harness
@@ -87,13 +89,42 @@ def _guard_step(engine: Engine, run_id: str, name: str, question: str, output: d
     recorder.record(name, {"question": question}, output, start, 0)
 
 
-def run_agent(question: str, *, graph=None, engine: Engine | None = None, run_id: str | None = None, conversation_id: str | None = None, actor: str | None = None, session: SessionContext | None = None, guardrails: bool = True) -> AgentResult:
+def _invoke(graph, state: dict, config: dict, on_token: Callable[[str], None] | None, control: streaming.Control | None) -> dict:
+    """The graph run. Normally `invoke`. With `on_token`/`control` (the WebSocket chat) it is `stream` in LangGraph's `custom` mode: every piece of text the generate node writes reaches `on_token`
+    while the model generates, and a cancelled control stops the run (raising `GenerationCancelled`); the final state is the same as an `invoke` would have returned."""
+    if on_token is None and control is None:
+        return graph.invoke(state, config)
+    marker = streaming.active_control.set(control)
+    try:
+        final = None
+        for mode, chunk in graph.stream(state, config, stream_mode=["custom", "values"]):
+            if mode == "custom":
+                if on_token is not None and isinstance(chunk, dict) and "token" in chunk:
+                    on_token(chunk["token"])
+            else:
+                final = chunk
+            if control is not None:
+                control.raise_if_cancelled()
+        return final
+    except streaming.GenerationCancelled:
+        raise
+    except Exception:
+        if control is not None and control.cancelled:  # closing the model connection makes the read fail: that is the cancellation, not an error
+            raise streaming.GenerationCancelled() from None
+        raise
+    finally:
+        streaming.active_control.reset(marker)
+
+
+def run_agent(question: str, *, graph=None, engine: Engine | None = None, run_id: str | None = None, conversation_id: str | None = None, actor: str | None = None, session: SessionContext | None = None, guardrails: bool = True,
+              on_token: Callable[[str], None] | None = None, control: streaming.Control | None = None) -> AgentResult:
     """Runs one question through the harness and the graph and returns the answer. A node failure propagates (the endpoint turns it into a clear error).
 
     With a `conversation_id` the conversation uses memory: a pending proposal is resolved first, relevant memories are read, and the agent may propose a new one.
     `actor` is the signed-in user: it is what the audit log records as the person who authorised (or refused) a memory.
     `session` is who is asking (the authenticated account and its role): with it, every order or tracking number in the message is checked against the customer's own orders.
     `guardrails=False` runs the bare graph (used by the older unit tests); the API always runs the harness.
+    `on_token` / `control` stream the answer as it is generated and let it be cancelled (the WebSocket chat; see `streaming.py`): the logic, the guardrails and the final answer are the same.
     """
     graph, engine, run_id = graph or get_graph(), engine or database.engine, run_id or str(uuid.uuid4())
     context = guard_events.Context(conversation_id=conversation_id, actor=actor, run_id=run_id, engine=engine)
@@ -108,7 +139,7 @@ def run_agent(question: str, *, graph=None, engine: Engine | None = None, run_id
     if pre is not None:
         state.update({"verified_facts": pre.verified_facts, "scope_subtype": pre.scope_subtype if pre.scope == "casual" else ""})
     with guard_events.bind(context):
-        final = graph.invoke(state, _config(run_id, engine))
+        final = _invoke(graph, state, _config(run_id, engine), on_token, control)
     result = _result(run_id, final, engine, conversation_id)
     if pre is None:
         return result
