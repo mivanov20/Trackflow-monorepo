@@ -21,8 +21,10 @@ From the repository root, create `services/.env` with your own private values (n
 DATABASE_URL=postgresql+psycopg://<user>:<password>@<host>:5432/postgres
 JWT_SECRET=<random-secret-at-least-32-characters>
 AUTH_DB_PATH=./services/data/users.json
-CORS_ORIGINS=http://localhost:3001,http://127.0.0.1:3001
+CORS_ORIGINS=http://localhost:3001,http://127.0.0.1:3001,http://localhost:3000,http://127.0.0.1:3000
 ```
+
+See `services/.env.example` for the full list, including the email settings.
 
 Install and run the API on port 8000, loading the private values into the process:
 
@@ -33,6 +35,21 @@ set -a && source services/.env && set +a && services/.venv/bin/uvicorn services.
 ```
 
 Register an operative at `/auth/register`, sign in at `/auth/login`, then run `services/.venv/bin/python -m services.seed_data` to add the syllabus development SKUs and movements to the configured database. Seed data is explicit, idempotent, and attributes movements to an already registered TinyDB user. Never use seed credentials or development data as a production access policy.
+
+### Password recovery and email (Resend)
+
+`POST /auth/forgot-password`, `POST /auth/reset-password` and `POST /auth/change-password` cover the two password flows. The reset email is sent with [Resend](https://resend.com); `services/.env.example` lists every variable.
+
+| Variable | Purpose |
+| --- | --- |
+| `EMAIL_PROVIDER` | `resend` sends real emails, `console` (development only) prints the reset link in the API log, empty or `disabled` sends nothing. |
+| `RESEND_API_KEY` | Your Resend API key. Required when `EMAIL_PROVIDER=resend`; the API refuses to start without it. Never commit it. |
+| `EMAIL_FROM` | Sender. Defaults to Resend's test sender `TrackFlow <onboarding@resend.dev>`, which only delivers to the email of your own Resend account. |
+| `FRONTEND_BASE_URL` | App that serves `/reset-password` (default `http://localhost:3001`, the backoffice; use `http://localhost:3000` for the candidates app). |
+| `PASSWORD_RESET_EXPIRE_MINUTES` | How long a reset link lasts (default 30, between 1 and 1440). |
+| `PASSWORD_RESET_COOLDOWN_SECONDS` | Minimum time between two emails for the same account (default 60, `0` disables it). |
+
+How it works: the link carries a signed JWT valid for one purpose only. The server also stores a record with a hash of the token id, marks it used when the password changes, and cancels older links, so a link cannot be reused. `forgot-password` always answers `200` with the same message and sends the email in the background, so it never reveals whether an address is registered. Resetting or changing a password signs out sessions issued earlier. To try the flow without sending email, set `EMAIL_PROVIDER=console` and copy the link from the API log.
 
 ### Inventory rules
 
