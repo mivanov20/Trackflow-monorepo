@@ -368,6 +368,29 @@ def _in_background(work: Callable[[], None]) -> None:
     threading.Thread(target=work, name="weekly-performance-run", daemon=True).start()
 
 
+def open_manual_run(engine, triggered_by: str | None, week_start: date | None = None, weeks_back: int = config.DEFAULT_WEEKS_BACK) -> str:
+    """Validates the weeks and records a manual run as `running`. Returns the run id.
+
+    Raises RunAlreadyRunning if a run is in progress and ValueError for an invalid week. The caller then hands the run to
+    something that executes it: a Celery worker (`services/reporting/`) or a thread (`trigger_weekly_performance_run`).
+    """
+    weeks = window.weeks_for_run(week_start, weeks_back)
+    return str(runs.open_run(engine, trigger="manual", triggered_by=triggered_by, window_start=weeks[0], window_end=weeks[-1]))
+
+
+def run_manual_flow(run_id: str, week_start: date | None = None, weeks_back: int = config.DEFAULT_WEEKS_BACK, triggered_by: str | None = None) -> dict:
+    """Runs the flow for a run that `open_manual_run` already recorded. This is what the Celery task calls.
+
+    Whatever happens, the run does not stay `running`: the flow closes it itself, and if it failed before it could (a bad week,
+    an exception outside its stages) it is closed here before the error is raised again.
+    """
+    try:
+        return weekly_warehouse_client_performance_flow(week_start=week_start, weeks_back=weeks_back, trigger="manual", triggered_by=triggered_by, run_id=run_id)
+    except BaseException as error:
+        runs.fail_run_if_running(config.reporting_engine(), uuid.UUID(run_id), error)
+        raise
+
+
 def trigger_weekly_performance_run(
     engine,
     triggered_by: str | None,
@@ -375,23 +398,22 @@ def trigger_weekly_performance_run(
     weeks_back: int = config.DEFAULT_WEEKS_BACK,
     launcher: Callable[[Callable[[], None]], None] | None = None,
 ) -> str:
-    """Opens a manual run and starts the flow without waiting for it. Returns the run id.
+    """Opens a manual run and starts the flow in a background thread without waiting for it. Returns the run id.
 
-    Raises RunAlreadyRunning if a run is in progress and ValueError for an invalid week. `services/reporting/` calls this
-    and nothing else: the pipeline logic stays here.
+    This is the no-broker way (scripts, tests). The API does not use it: it enqueues a Celery task instead, so the work runs
+    in a worker process and not in the API.
     """
-    weeks = window.weeks_for_run(week_start, weeks_back)
-    run_id = runs.open_run(engine, trigger="manual", triggered_by=triggered_by, window_start=weeks[0], window_end=weeks[-1])
+    run_id = open_manual_run(engine, triggered_by, week_start, weeks_back)
 
     def execute() -> None:
         try:
             with config.use_engine(engine):
-                weekly_warehouse_client_performance_flow(week_start=week_start, weeks_back=weeks_back, trigger="manual", triggered_by=triggered_by, run_id=str(run_id))
+                run_manual_flow(run_id, week_start, weeks_back, triggered_by)
         except Exception:  # noqa: BLE001 - the failure is already in the run log; a background thread has nowhere to raise
             logger.exception("The manual run %s failed", run_id)
 
     (launcher or _in_background)(execute)
-    return str(run_id)
+    return run_id
 
 
 def main(argv: list[str] | None = None) -> int:

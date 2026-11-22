@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import DDL, CheckConstraint, Column, Date, DateTime, Index, JSON, Numeric, Text, Uuid, event, text
+from sqlalchemy import DDL, CheckConstraint, Column, Date, DateTime, Index, Integer, JSON, Numeric, Text, Uuid, event, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 from trackflow_shared.incidents import BRANCHES, CATEGORIES, ORIGINS, STATUSES
@@ -172,3 +172,25 @@ class JobRun(SQLModel, table=True):
     finished_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
     error_message: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     created_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class DeadLetterTask(SQLModel, table=True):
+    """The dead letter queue: a Celery task that failed on every attempt, recorded once with why and when.
+
+    The message that failed carries identifiers only (never a data payload), so `payload` holds those identifiers.
+    Rows are written by the worker, never updated or deleted by the application.
+    """
+
+    __tablename__ = "dead_letter_tasks"
+    __table_args__ = (Index("ix_dead_letter_tasks_task_id", "task_id"), Index("ix_dead_letter_tasks_failed_at", "failed_at"))
+
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=Column(Uuid, primary_key=True, server_default=text("gen_random_uuid()") if _POSTGRES else None),
+    )
+    task_id: str = Field(sa_column=Column(Text, nullable=False))
+    task_name: str = Field(sa_column=Column(Text, nullable=False))
+    attempt: int = Field(sa_column=Column(Integer, nullable=False))
+    error_message: str = Field(sa_column=Column(Text, nullable=False))
+    payload: dict = Field(default_factory=dict, sa_column=Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False, server_default=text("'{}'")))
+    failed_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))

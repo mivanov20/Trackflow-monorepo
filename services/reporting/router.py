@@ -1,10 +1,13 @@
 """Endpoints of the Weekly Warehouse & Client Performance pipeline (design section 5).
 
 They validate, authenticate and serialise. Every behaviour lives in `data/pipelines/`: reading the KPI table, reading the
-run log and starting a run are functions imported from there, so nothing of the pipeline is duplicated in `services/`.
+run log and opening a run are functions imported from there, so nothing of the pipeline is duplicated in `services/`.
+Starting a run does not run it here: the endpoint enqueues a Celery task and answers 202 with its id, and a worker, which is
+a separate process, does the work (`GET /tasks/{task_id}` follows it).
 This module is separate from `services/telemetry/`, which keeps serving engineering.
 """
 
+import uuid
 from datetime import date
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
@@ -18,6 +21,7 @@ from data.pipelines.weekly_performance import config, queries, runs
 from ..accounts import User
 from ..auth import get_current_user
 from ..database import get_session
+from ..tasks import run_weekly_performance_pipeline
 
 router = APIRouter(prefix="/reporting", tags=["reporting"])
 
@@ -73,8 +77,9 @@ class TriggerRequest(BaseModel):
 
 
 class TriggerResponse(BaseModel):
+    task_id: str
     run_id: str
-    status: str = "running"
+    status: str = "pending"
 
 
 @router.get("/weekly-warehouse-client-performance", response_model=WeeklyPerformanceResponse)
@@ -107,14 +112,24 @@ def trigger_pipeline_run(
     session: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ) -> JSONResponse:
-    """Starts a manual run and answers at once with its id; follow it with `GET /reporting/pipeline-runs/latest`."""
+    """Enqueues a manual run and answers at once with the `task_id` of the Celery task and the `run_id` of the pipeline run.
+
+    Follow the task with `GET /tasks/{task_id}` and the pipeline with `GET /reporting/pipeline-runs/latest`.
+    """
     if user.role not in TRIGGER_ROLES:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only an admin or a manager can start the pipeline.")
     options = body or TriggerRequest()
+    engine = session.get_bind()
     try:
-        run_id = pipeline.trigger_weekly_performance_run(session.get_bind(), user.id, options.week_start, options.weeks_back)
+        run_id = pipeline.open_manual_run(engine, user.id, options.week_start, options.weeks_back)
     except runs.RunAlreadyRunning as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A run is already in progress.") from error
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
-    return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content={"run_id": run_id, "status": "running"})
+    try:
+        # The message holds identifiers and two small parameters: the worker reads the data itself.
+        task = run_weekly_performance_pipeline.delay(run_id, options.week_start.isoformat() if options.week_start else None, options.weeks_back, user.id)
+    except Exception as error:  # noqa: BLE001 - the broker is down: nobody will run this, so the run must not stay `running`
+        runs.fail_run_if_running(engine, uuid.UUID(run_id), error)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="The task queue is temporarily unavailable.") from error
+    return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content={"task_id": task.id, "run_id": run_id, "status": "pending"})

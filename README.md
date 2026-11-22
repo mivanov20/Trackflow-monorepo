@@ -44,12 +44,26 @@ That is the only step. The first run builds the images (a few minutes); later ru
 | --- | --- | --- |
 | `ui` | `uis/website` and `uis/backoffice`, both with `next dev` (hot reload), started by `uis/start.sh` | website <http://localhost:3000>, backoffice <http://localhost:3001> |
 | `api` | `services/` with `uvicorn --reload` | <http://localhost:8000> (docs at `/docs`) |
+| `redis` | the broker and result store of the task queue (`noeviction`, persisted) | `localhost:6379` |
+| `worker` | a Celery worker: runs the tasks the API enqueues, in its own process | no page; `docker compose logs -f worker` |
+| `flower` | Flower, the monitor of the task queue | <http://localhost:5555> |
 
 - **Hot reload:** the source code is bind-mounted, so saving a file on your machine updates the browser (UIs) or restarts the API without rebuilding. Dependencies and Next caches live in Docker volumes, separate from the ones on your machine.
 - **Configuration:** all values come from environment variables. `docker compose up` works without any `.env` (a local SQLite database, a random `JWT_SECRET` generated each time the API container starts, and password-reset links written to the API log). To change anything, copy `.env.example` to `.env` (Git ignores it) and edit it, for example to use Supabase (`DATABASE_URL`), keep sessions across restarts (`JWT_SECRET`) or send real email (`EMAIL_PROVIDER=resend`, `RESEND_API_KEY`). Never put real secrets in `docker-compose.yml`, a `Dockerfile` or `.env.example`.
 - **Services talk by name, not by `localhost`:** both containers are on the network `trackflow-net`. The backoffice server reaches the API at `http://api:8000` (`API_INTERNAL_URL`). The browser cannot resolve a Docker service name, so it calls `/backend/...` on the backoffice, which forwards the request to `http://api:8000`; no CORS is involved. Outside Docker nothing changes: the browser keeps using `NEXT_PUBLIC_INVENTORY_API_URL` (`http://localhost:8000`).
 - **Ports already in use?** Set `WEBSITE_HOST_PORT`, `BACKOFFICE_HOST_PORT` or `API_HOST_PORT` in `.env`.
 - **Useful commands:** `docker compose logs -f api` (API log, including reset links), `docker compose down` (stop), `docker compose down -v` (stop and delete the volumes: database, accounts, dependencies), `docker compose build` after changing a `package.json` or `requirements.txt` (then `docker compose down -v` so the UI volumes pick up the new dependencies).
+### Task queue and worker (Celery + Redis)
+
+Slow work does not run inside a request. The API enqueues a Celery task and answers `202 Accepted` with a `task_id` at once; a **worker, which is a separate process**, picks the message up from Redis and does the work. Today the task is the weekly performance pipeline: `POST /reporting/pipeline-runs` (admin or manager) returns `{"task_id", "run_id", "status": "pending"}`, and `GET /tasks/{task_id}` returns `{"task_id", "status", "result"}` with the status `pending`, `started`, `retry`, `success` or `failure`.
+
+- **Start it:** `docker compose up` starts `redis`, `worker` and `flower` with the API. To start only the queue side: `docker compose up redis worker flower`.
+- **Stop it:** `docker compose stop worker` (a warm shutdown: it finishes the task in hand, and nothing waiting in Redis is lost) and `docker compose start worker` to bring it back. Stopping or restarting the API does not touch the worker or the queue.
+- **Without Docker** (from the repository root, with `REDIS_URL` and `DATABASE_URL` set): `celery -A services.celery_app worker --loglevel=INFO` to start it, `Ctrl+C` to stop it (warm shutdown), or `celery -A services.celery_app control shutdown` from another terminal. On Windows add `--pool=solo`.
+- **Watch it:** Flower at <http://localhost:5555> shows queued, running, succeeded, failed and retried tasks. `docker compose logs -f worker` has one line per event: `task_id=... task=... attempt=1 status=success duration_ms=...`, and the full error for a failure.
+- **Retries and the dead letter queue:** a failed task is retried 3 times, waiting 5, 10 and 20 seconds (`TASK_RETRY_BACKOFF_SECONDS` sets the first wait). If the last retry fails too, one row is written to the `dead_letter_tasks` table with the `task_id`, the attempt number, the error and the time (SQL in `services/sql/dead_letter_tasks.sql`).
+- **Configuration:** `REDIS_URL` (the same for the API and the workers; `redis://redis:6379/0` inside Docker, `redis://localhost:6379/0` outside).
+
 - **Not included:** the candidates app at the repository root (it also uses port 3000) and the static `uis/talent-pipeline-tracker`.
 
 ---

@@ -18,7 +18,6 @@ expiry: a `processing` row older than `stale_after` is marked `failed` by the ne
 """
 
 import logging
-import re
 import uuid
 from collections.abc import Callable
 from datetime import date, datetime, timedelta, timezone
@@ -27,13 +26,13 @@ from typing import Literal
 from sqlalchemy import Engine, delete, func, insert, select, update
 from sqlalchemy.exc import IntegrityError
 
+from .error_text import MAX_ERROR_LENGTH, describe_error  # noqa: F401 - describe_error is part of this module's interface
 from .models import JobRun
 
 JOB_NIGHTLY_EXPORT = "nightly_export"
 
 # A nightly export takes seconds to minutes. A `processing` row older than this belongs to a process that died.
 STALE_AFTER = timedelta(hours=3)
-MAX_ERROR_LENGTH = 1000
 
 LOG_FORMAT = "%(asctime)s %(levelname)s job=%(job_name)s status=%(status)s %(message)s"
 
@@ -63,13 +62,6 @@ def log_event(level: int, job_name: str, status: str, message: str) -> None:
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def describe_error(error: BaseException) -> str:
-    """The text stored in `error_message`: the class and the message, without URLs or credentials, at most 1000 characters."""
-    text = f"{type(error).__name__}: {error}".strip()
-    cleaned = re.sub(r"\b[a-z][a-z0-9+.-]*://\S+", "<url>", text, flags=re.I)
-    return cleaned[:MAX_ERROR_LENGTH]
 
 
 # --- the table ----------------------------------------------------------------------------------------------------------
