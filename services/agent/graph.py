@@ -21,13 +21,23 @@ without calling the model.
 The RAG logic is not rewritten: `retrieve_context` calls `rag.retrieve`, `generate` calls `rag.generate_answer` with the retrieved chunks plus the
 live results (as blocks with their own source: `incident-manager`, `inventory-manager`). No node calls the monolithic `query()`.
 
-STATE (no conversation history: one question at a time, the knowledge base and the live services are the only memory it uses):
+MEMORY (only when a conversation id is given; see services/agent/memory and docs/agent/memory-design.md). Three nodes join the graph, none of them runs in a turn
+that has nothing to do with memory, so such a turn is traced exactly as before:
+    resolve_memory      the conversation has a PENDING proposal: the user's message is first classified against it (approve / edit / reject / unrelated / unclear),
+                        the decision is logged and, only if approved, written. What is left of the message (another question) continues through the graph.
+    acknowledge_memory  the message was only a decision: it answers with what was done.
+    propose_memory      after `generate`: the answer came with a `memory_proposal` that passed the gates: it is recorded as PENDING and the question
+                        "want me to remember this?" is appended to the answer. Nothing is written.
+
+STATE (no conversation history: one question at a time; what the agent keeps is in the memory store, read through an explicit interface):
     question   what the user asked (trimmed by the first node)
     plan       the planner's decision: steps in order, ticket id, stock query, and why (it goes to the trace)
     live_data  the results of the tools (`ToolResult`: ok / not_found / timeout / unavailable)
     context    the chunks `retrieve` returned (empty when none clears `min_score`)
     answer     the final text, from the model or from a fixed honest message
-    outcome    how the run ended: generated | no_context | empty_question | needs_ticket_id | tool_unavailable
+    outcome    how the run ended: generated | no_context | empty_question | needs_ticket_id | tool_unavailable | memory_decision
+    conversation_id / actor   who the memory belongs to and who authorises it (set only for memory-enabled conversations)
+    memory_decision, memory_notice, memory_candidate, memory_proposal, memories_used   the memory step's inputs and outputs (see above)
 """
 
 from __future__ import annotations
@@ -39,12 +49,17 @@ from langgraph.graph import END, START, StateGraph
 from data.pipelines import rag
 
 from . import tools
+from .memory import decisions as memory_decisions
+from .memory import generation as memory_generation
+from .memory import policy as memory_policy
+from .memory import store as memory_store
 from .routing import plan_sources
 from .trace import traced
 
 RECEIVE, REJECT, PLAN, CLARIFY = "receive_question", "reject_empty", "plan_sources", "ask_clarification"
 LOOKUP_TICKET, LOOKUP_STOCK, RETRIEVE = "lookup_ticket", "lookup_stock", "retrieve_context"
 GENERATE, UNAVAILABLE, NO_INFORMATION = "generate", "answer_unavailable", "no_information"
+RESOLVE, ACKNOWLEDGE, PROPOSE = "resolve_memory", "acknowledge_memory", "propose_memory"
 REQUIRED_NODES = (RECEIVE, PLAN, LOOKUP_TICKET, RETRIEVE, GENERATE)
 STEP_NODE = {"ticket": LOOKUP_TICKET, "stock": LOOKUP_STOCK, "rag": RETRIEVE}
 
@@ -63,6 +78,13 @@ class AgentState(TypedDict, total=False):
     context: list[dict]
     answer: str
     outcome: str
+    conversation_id: str
+    actor: str
+    memory_decision: dict
+    memory_notice: str
+    memory_candidate: dict
+    memory_proposal: dict
+    memories_used: list
 
 
 class AgentBuildError(RuntimeError):
@@ -106,9 +128,62 @@ def retrieve_context(state: AgentState) -> dict:
 
 
 def generate(state: AgentState) -> dict:
-    """Writes the answer with `generate_answer()` from the live results and the chunks the previous nodes produced."""
+    """Writes the answer from the live results and the chunks the previous nodes produced.
+
+    Without a conversation id this is `generate_answer()`. With one, it is the SAME model call with two more things: the memories that are relevant now (read from the
+    store, not kept in the prompt) go in, and a `memory_proposal` (the agent's self-evaluation of this interaction) comes out. A proposal only travels in the state;
+    nothing is remembered here.
+    """
     blocks = [*tools.live_chunks(state.get("live_data") or []), *(state.get("context") or [])]
-    return {"answer": rag.generate_answer(state["question"], blocks), "outcome": "generated"}
+    if not state.get("conversation_id"):
+        return {"answer": rag.generate_answer(state["question"], blocks), "outcome": "generated"}
+    memories = memory_store.get_store().recall(state["question"])
+    turn = memory_generation.generate_with_self_evaluation(state["question"], blocks, memories)
+    update: dict = {"answer": turn.answer, "outcome": "generated", "memories_used": [m.id for m in memories]}
+    if turn.proposal_raw:
+        update["memory_candidate"] = turn.proposal_raw
+    return update
+
+
+def resolve_memory(state: AgentState) -> dict:
+    """The conversation has a pending proposal: classify the user's message against it, log the decision, write only what was approved.
+
+    What is left of the message (a question asked in the same breath, or the whole message if the user moved on) continues through the graph as the question.
+    """
+    store = memory_store.get_store()
+    pending = store.pending(state.get("conversation_id"))
+    if pending is None:  # resolved by another request in between
+        return {}
+    message = state["question"]
+    decision = memory_decisions.classify(message, pending.summary)
+    resolution = store.resolve(pending.id, decision, decided_by=state.get("actor"), message=message)
+    return {
+        "question": decision.remainder.strip(),
+        "memory_notice": resolution.notice,
+        "memory_decision": {"proposal_id": pending.id, "label": decision.label, "confidence": round(decision.confidence, 2), "method": decision.method, "outcome": resolution.status, "entry_id": resolution.entry_id},
+    }
+
+
+def acknowledge_memory(state: AgentState) -> dict:
+    """The message was only a decision about the proposal: say what was done."""
+    return {"answer": state.get("memory_notice") or "Done.", "outcome": "memory_decision"}
+
+
+def propose_memory(state: AgentState) -> dict:
+    """The model offered something to remember. Gates first (the kind of message, a complete proposal, the forbidden-content policy, not already known, nothing else pending);
+    if it passes, it is recorded as PENDING and the question is appended to the answer. Nothing is written to memory."""
+    store = memory_store.get_store()
+    conversation = state["conversation_id"]
+    vetted = memory_generation.vet(state.get("memory_candidate"), state["question"], store)
+    if vetted.blocked_categories:
+        store.log_blocked(conversation, actor=state.get("actor"), origin_message=state["question"], categories=vetted.blocked_categories, kind=(state.get("memory_candidate") or {}).get("kind"))
+    if vetted.proposal is None:
+        return {"memory_candidate": {}, "memory_proposal": {"dropped": vetted.dropped or "nothing to propose"}}
+    try:
+        record = store.propose(conversation, vetted.proposal, actor=state.get("actor"), origin_message=state["question"])
+    except memory_store.PendingExists:
+        return {"memory_candidate": {}, "memory_proposal": {"dropped": "a proposal is already waiting for an answer in this conversation"}}
+    return {"answer": state["answer"] + memory_generation.proposal_question(vetted.proposal), "memory_candidate": {}, "memory_proposal": {"id": record.id, "kind": record.kind, "scope_key": record.scope_key, "summary": record.summary}}
 
 
 def answer_unavailable(state: AgentState) -> dict:
@@ -123,7 +198,19 @@ def no_information(state: AgentState) -> dict:
 
 # ----------------------------------------------------------------------------- edges: decided by what the nodes produced
 def after_receive(state: AgentState) -> str:
-    return "empty" if not state.get("question") else "plan"
+    if not state.get("question"):
+        return "empty"
+    if memory_store.get_store().pending(state.get("conversation_id")):  # a proposal is waiting: the user's message is first an answer to it
+        return "memory"
+    return "plan"
+
+
+def after_resolve(state: AgentState) -> str:
+    return "plan" if state.get("question", "").strip() else "acknowledge"
+
+
+def after_generate(state: AgentState) -> str:
+    return "propose" if state.get("memory_candidate") else "end"
 
 
 def next_node(state: AgentState, current: str | None = None) -> str:
@@ -135,6 +222,8 @@ def next_node(state: AgentState, current: str | None = None) -> str:
     live = state.get("live_data") or []
     if state.get("context") or any(result["status"] == "ok" for result in live):
         return GENERATE
+    if state.get("conversation_id") and memory_store.get_store().recall(state["question"], touch=False):
+        return GENERATE  # nothing else answers, but the agent remembers something relevant that a support agent confirmed
     return UNAVAILABLE if live else NO_INFORMATION
 
 
@@ -160,18 +249,21 @@ def build_graph() -> StateGraph:
     nodes = (
         (RECEIVE, receive_question), (REJECT, reject_empty), (PLAN, plan_sources_node), (CLARIFY, ask_clarification), (LOOKUP_TICKET, lookup_ticket),
         (LOOKUP_STOCK, lookup_stock), (RETRIEVE, retrieve_context), (GENERATE, generate), (UNAVAILABLE, answer_unavailable), (NO_INFORMATION, no_information),
+        (RESOLVE, resolve_memory), (ACKNOWLEDGE, acknowledge_memory), (PROPOSE, propose_memory),
     )
     for name, function in nodes:
         builder.add_node(name, traced(name, function))
     builder.add_edge(START, RECEIVE)
-    builder.add_conditional_edges(RECEIVE, after_receive, {"empty": REJECT, "plan": PLAN})
+    builder.add_conditional_edges(RECEIVE, after_receive, {"empty": REJECT, "plan": PLAN, "memory": RESOLVE})
+    builder.add_conditional_edges(RESOLVE, after_resolve, {"plan": PLAN, "acknowledge": ACKNOWLEDGE})
+    builder.add_conditional_edges(GENERATE, after_generate, {"propose": PROPOSE, "end": END})
     after_plan_targets = {name: name for name in (CLARIFY, LOOKUP_TICKET, LOOKUP_STOCK, RETRIEVE, GENERATE, UNAVAILABLE, NO_INFORMATION)}
     builder.add_conditional_edges(PLAN, after_plan, after_plan_targets)
     later_targets = {name: name for name in (LOOKUP_STOCK, RETRIEVE, GENERATE, UNAVAILABLE, NO_INFORMATION)}
     builder.add_conditional_edges(LOOKUP_TICKET, after_ticket, later_targets)
     builder.add_conditional_edges(LOOKUP_STOCK, after_stock, {name: name for name in (RETRIEVE, GENERATE, UNAVAILABLE, NO_INFORMATION)})
     builder.add_conditional_edges(RETRIEVE, after_retrieve, {name: name for name in (GENERATE, UNAVAILABLE, NO_INFORMATION)})
-    for name in (REJECT, CLARIFY, GENERATE, UNAVAILABLE, NO_INFORMATION):
+    for name in (REJECT, CLARIFY, UNAVAILABLE, NO_INFORMATION, ACKNOWLEDGE, PROPOSE):
         builder.add_edge(name, END)
     return builder
 

@@ -15,6 +15,7 @@ from sqlalchemy import Engine
 from sqlmodel import Session, select
 
 from ..models import AgentTraceStep
+from .memory import policy
 
 QUESTION_PREVIEW = 500
 ANSWER_PREVIEW = 2000
@@ -30,9 +31,13 @@ def summarize(values: dict[str, Any] | None) -> dict[str, Any]:
             # what each tool was asked, how it ended, and a few fields of the record: never the free text of a ticket
             summary["live_data"] = [{"tool": r["tool"], "status": r["status"], "input": r["input"], "message": r.get("message", ""), "summary": r.get("summary", {})} for r in value]
         elif key == "question":
-            summary["question"] = str(value)[:QUESTION_PREVIEW]
+            summary["question"] = policy.redact(str(value), QUESTION_PREVIEW)  # a question can carry an address or a tracking number: it never reaches the trace as such
         elif key == "answer":
-            summary["answer"] = str(value)[:ANSWER_PREVIEW]
+            summary["answer"] = policy.redact(str(value), ANSWER_PREVIEW)
+        elif key == "memory_candidate":  # what the model suggested is not logged here (it may be forbidden text): only its kind
+            summary["memory_candidate"] = {"kind": value.get("kind")} if value else {}
+        elif key == "memory_proposal":
+            summary["memory_proposal"] = {k: v for k, v in value.items() if k != "summary"}
         else:
             summary[key] = value
     return summary

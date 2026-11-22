@@ -33,6 +33,10 @@ class AgentResult:
     answer: str
     outcome: str  # generated | no_context | empty_question | needs_ticket_id | tool_unavailable
     sources: tuple[str, ...] = ()  # what the run consulted, in order: tool:ticket_lookup, tool:stock_lookup, rag
+    conversation_id: str | None = None
+    memory_notice: str | None = None  # what was done with a proposal that was pending (saved, not saved...)
+    pending_proposal: dict | None = None  # {id, kind, scope_key, summary} of the proposal this turn put to the user, if any
+    memory_used: tuple[str, ...] = ()  # ids of the memories that went into the answer
 
 
 def make_checkpointer(path: str | None = None):
@@ -59,11 +63,29 @@ def _config(run_id: str, engine: Engine, first_step: int = 1) -> dict:
     return {"configurable": {"thread_id": run_id, "recorder": TraceRecorder(engine, run_id, first_step)}}
 
 
-def run_agent(question: str, *, graph=None, engine: Engine | None = None, run_id: str | None = None) -> AgentResult:
-    """Runs the graph for one question and returns the answer. A node failure propagates (the endpoint turns it into a clear error)."""
+def _result(run_id: str, final: dict, engine: Engine, conversation_id: str | None) -> AgentResult:
+    answer, notice = final["answer"], final.get("memory_notice")
+    if notice and final["outcome"] != "memory_decision":  # the user answered the proposal AND asked something: what was done first, then the answer
+        answer = f"{notice}\n\n{answer}"
+    proposal = final.get("memory_proposal") or {}
+    return AgentResult(
+        run_id=run_id, answer=answer, outcome=final["outcome"], sources=tuple(sources_used(read_trace(engine, run_id))), conversation_id=conversation_id,
+        memory_notice=notice, pending_proposal=proposal if proposal.get("id") else None, memory_used=tuple(final.get("memories_used") or ()),
+    )
+
+
+def run_agent(question: str, *, graph=None, engine: Engine | None = None, run_id: str | None = None, conversation_id: str | None = None, actor: str | None = None) -> AgentResult:
+    """Runs the graph for one question and returns the answer. A node failure propagates (the endpoint turns it into a clear error).
+
+    With a `conversation_id` the conversation uses memory: a pending proposal is resolved first, relevant memories are read, and the agent may propose a new one.
+    `actor` is the signed-in user: it is what the audit log records as the person who authorised (or refused) a memory.
+    """
     graph, engine, run_id = graph or get_graph(), engine or database.engine, run_id or str(uuid.uuid4())
-    final = graph.invoke({"question": question}, _config(run_id, engine))
-    return AgentResult(run_id=run_id, answer=final["answer"], outcome=final["outcome"], sources=tuple(sources_used(read_trace(engine, run_id))))
+    state: dict = {"question": question}
+    if conversation_id:
+        state.update({"conversation_id": conversation_id, "actor": actor or ""})
+    final = graph.invoke(state, _config(run_id, engine))
+    return _result(run_id, final, engine, conversation_id)
 
 
 def resume(run_id: str, *, graph=None, engine: Engine | None = None) -> AgentResult:
@@ -71,7 +93,7 @@ def resume(run_id: str, *, graph=None, engine: Engine | None = None) -> AgentRes
     graph, engine = graph or get_graph(), engine or database.engine
     done = len(read_trace(engine, run_id))
     final = graph.invoke(None, _config(run_id, engine, first_step=done + 1))
-    return AgentResult(run_id=run_id, answer=final["answer"], outcome=final["outcome"], sources=tuple(sources_used(read_trace(engine, run_id))))
+    return _result(run_id, final, engine, final.get("conversation_id"))
 
 
 def checkpoints(run_id: str, *, graph=None) -> list[dict]:
