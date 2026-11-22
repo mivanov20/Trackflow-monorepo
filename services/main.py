@@ -17,6 +17,8 @@ from .routers.agent import router as agent_router
 from .routers.knowledge import router as knowledge_router
 from .routers.rfp import router as rfp_router
 from .routers.rfp_events import router as rfp_events_router
+from .routers.chat import router as chat_router
+from .chat import store as chat_store
 from .events import bus as event_bus
 from .routers.profiles import router as profiles_router
 from .reporting.router import router as reporting_router
@@ -51,6 +53,12 @@ async def lifespan(_: FastAPI):
         ensure_reporting(engine)
     except Exception:  # a missing right on the `reporting` schema must not take the whole API down
         logger.exception("The reporting schema could not be prepared; the reporting endpoints will fail until it exists.")
+    try:
+        orphans = chat_store.interrupt_orphans(engine)  # a chat message left streaming by a previous process keeps the text it had and becomes `interrupted`
+        if orphans:
+            logger.warning("%d chat message(s) were still streaming when the service stopped; they are marked as interrupted.", orphans)
+    except Exception:  # the chat tables are checked by the first request; a startup check must not take the API down
+        logger.exception("Chat messages could not be checked at startup.")
     try:
         with Session(engine) as session:
             interrupted = rfp_store.interrupt_stale(session) + rfp_proposal_store.interrupt_stale(session)
@@ -115,6 +123,7 @@ app.include_router(knowledge_router)
 app.include_router(agent_router)
 app.include_router(rfp_router)
 app.include_router(rfp_events_router)
+app.include_router(chat_router)
 
 
 @app.get("/health", tags=["health"])

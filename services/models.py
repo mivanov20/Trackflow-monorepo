@@ -465,3 +465,36 @@ class RfpTraceEvent(SQLModel, table=True):
     output: dict = Field(default_factory=dict, sa_column=_json_column("{}"))
     dedupe_key: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class ChatSession(SQLModel, table=True):
+    """A conversation between a client and the first-line CX agent over the WebSocket chat (Real Time Systems, part 2). `session_id` is also the id the socket is bound to."""
+
+    __tablename__ = "chat_sessions"
+    __table_args__ = (Index("ix_chat_sessions_user", "user_id", "created_at"),)
+
+    session_id: str = Field(sa_column=Column(Text, primary_key=True))  # chat_<8 hex>
+    agent_id: str = Field(default="first_line_cx", sa_column=Column(Text, nullable=False))
+    user_id: str = Field(sa_column=Column(Text, nullable=False))  # the account of the client chatting
+    client_id: str = Field(sa_column=Column(Text, nullable=False))  # the client (brand) the conversation is for; the user's own id when none is given
+    status: str = Field(default="active", sa_column=Column(Text, nullable=False))  # active | interrupted | closed
+    created_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
+    updated_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class ChatMessage(SQLModel, table=True):
+    """One message of a chat session. An assistant message that was interrupted is KEPT (with the text already shown) and marked `interrupted`; the next reply is a new message."""
+
+    __tablename__ = "chat_messages"
+    __table_args__ = (Index("ix_chat_messages_session_seq", "session_id", "seq", unique=True),)
+
+    message_id: str = Field(sa_column=Column(Text, primary_key=True))  # msg_<8 hex>
+    session_id: str = Field(sa_column=Column(Text, ForeignKey("chat_sessions.session_id"), nullable=False))
+    seq: int = Field(sa_column=Column(Integer, nullable=False))  # order within the session
+    role: str = Field(sa_column=Column(Text, nullable=False))  # user | assistant
+    text: str = Field(default="", sa_column=Column(Text, nullable=False))
+    status: str = Field(default="completed", sa_column=Column(Text, nullable=False))  # completed | streaming | interrupted | failed
+    run_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # the agent run (its trace) that produced an assistant message
+    token_count: int = Field(default=0, sa_column=Column(Integer, nullable=False))
+    created_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
+    updated_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))

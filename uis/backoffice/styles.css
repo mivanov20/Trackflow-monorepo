@@ -516,3 +516,27 @@ td .status + .small-button { margin-left: 10px; }
 @keyframes rfp-live-glow { 0% { box-shadow: 0 0 0 0 rgba(63, 138, 74, .5); } 100% { box-shadow: 0 0 0 10px rgba(63, 138, 74, 0); } }
 @keyframes rfp-live-dot { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .rfp-live-card.is-fresh, .rfp-live-pill-connected > span { animation: none; } }
+
+/* Chat with the support agent over WebSocket */
+.chat-panel { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
+.chat-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.chat-new { margin-left: auto; }
+.chat-log { list-style: none; margin: 0; padding: 4px; display: grid; gap: 10px; align-content: start; min-height: 220px; max-height: 480px; overflow-y: auto; scroll-behavior: smooth; }
+.chat-empty { color: var(--muted); font-size: 13px; padding: 10px 4px; }
+.chat-msg { max-width: 82%; padding: 9px 13px; border-radius: 10px; font-size: 14px; line-height: 1.55; }
+.chat-user { justify-self: end; background: #e8f1ea; border: 1px solid #cfe0d3; }
+.chat-assistant { justify-self: start; background: #f7f9f7; border: 1px solid #e0e7e2; }
+.chat-who { display: block; margin-bottom: 2px; font: 700 10px var(--mono); letter-spacing: .04em; color: var(--muted); text-transform: uppercase; }
+.chat-text { white-space: pre-wrap; word-break: break-word; }
+.chat-caret { display: inline-block; width: 7px; height: 1.05em; margin-left: 2px; vertical-align: text-bottom; background: #2f7a3b; animation: chat-caret 1s steps(2, start) infinite; }
+.chat-thinking { color: var(--muted); font-style: italic; }
+.chat-interrupted { border-style: dashed; border-color: #d28a2d; background: #fffaf2; }
+.chat-failed { border-color: #e8b8b1; background: #fff6f4; }
+.chat-badge { display: inline-block; margin-top: 6px; padding: 1px 8px; border-radius: 9px; font-size: 11px; font-weight: 700; }
+.chat-badge-interrupted { background: #fbf2e7; color: #a36a21; }
+.chat-badge-failed { background: #fff2f0; color: #873c35; }
+.chat-form { display: grid; gap: 8px; }
+.chat-form textarea { width: 100%; box-sizing: border-box; padding: 9px 11px; border: 1px solid #d5ded6; border-radius: 6px; font: 14px inherit; resize: vertical; }
+.chat-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+@keyframes chat-caret { to { visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) { .chat-caret { animation: none; } .chat-log { scroll-behavior: auto; } }

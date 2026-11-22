@@ -49,7 +49,7 @@ from langgraph.graph import END, START, StateGraph
 
 from data.pipelines import rag
 
-from . import tools
+from . import streaming, tools
 from .guardrails import prompt as secure_prompt
 from .memory import decisions as memory_decisions
 from .memory import generation as memory_generation
@@ -142,10 +142,14 @@ def generate(state: AgentState) -> dict:
     subtype = state.get("scope_subtype") or None
     if not state.get("conversation_id"):
         token = rag.active_system_prompt.set(secure_prompt.system_prompt(subtype))  # the agent's secure prompt, for this call only
+        sink = streaming.sink_for_node()  # None unless the run was started for streaming (WebSocket chat): then the SAME model call is streamed
+        sink_token = rag.token_sink.set(sink) if sink is not None else None
         try:
             return {"answer": rag.generate_answer(state["question"], blocks), "outcome": "generated"}
         finally:
             rag.active_system_prompt.reset(token)
+            if sink_token is not None:
+                rag.token_sink.reset(sink_token)
     memories = memory_store.get_store().recall(state["question"])
     turn = memory_generation.generate_with_self_evaluation(state["question"], blocks, memories, subtype)
     update: dict = {"answer": turn.answer, "outcome": "generated", "memories_used": [m.id for m in memories]}
