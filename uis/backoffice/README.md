@@ -79,3 +79,7 @@ Protected routes (same login and layout as inventory) for the centralized incide
 - `/backoffice/incidents/new` is the report form. It validates required fields in the browser, shows API errors next to their field or in a banner with a retry button, disables the submit button while saving, highlights the branch field when the origin is `branch`, and uses touch-sized controls with dropdowns instead of free text wherever possible.
 
 `lib/incidents.ts` holds the types, display labels and API calls; `lib/api-client.ts` gained `PATCH`, an optional request timeout, per-field errors and a service name for messages (inventory behaviour is unchanged). Screenshots are in `docs/incident-manager/`.
+
+## RFP intake
+
+`/backoffice/rfp` uploads RFP PDFs (one ticket each), polls their status (`analyzing` → `intake_complete` or `discarded`, or `failed`) and shows, for a processed RFP, the summary for Sales, the key aspects of each department with its owner, the metadata and the processing-cost metrics. The page talks to `/rfp/tickets` of the same API. See [docs/rfp/design.md](../../docs/rfp/design.md).

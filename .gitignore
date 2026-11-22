@@ -20,3 +20,6 @@ data/process/weekly-performance-snapshots/
 # Nightly telemetry exports: backups for audit and recovery, never committed
 data/raw/telemetry_*.csv
 data/raw/telemetry_*.csv.part
+
+# RFPs uploaded through the backoffice (client documents): a runtime artifact of the intake, never committed
+data/raw/rfp/

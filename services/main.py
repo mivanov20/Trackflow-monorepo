@@ -15,6 +15,7 @@ from .routers.incidents import router as incidents_router
 from .routers.inventory import router as inventory_router
 from .routers.agent import router as agent_router
 from .routers.knowledge import router as knowledge_router
+from .routers.rfp import router as rfp_router
 from .routers.profiles import router as profiles_router
 from .reporting.router import router as reporting_router
 from .routers.tasks import router as tasks_router
@@ -24,6 +25,8 @@ from .agent import validate_agent
 from .mailer import validate_email_config
 from .security import validate_security_config
 from data.pipelines.weekly_performance.schema import ensure_reporting
+from data.pipelines.rfp_intake import store as rfp_store
+from sqlmodel import Session
 
 logger = logging.getLogger("services")
 
@@ -44,6 +47,13 @@ async def lifespan(_: FastAPI):
         ensure_reporting(engine)
     except Exception:  # a missing right on the `reporting` schema must not take the whole API down
         logger.exception("The reporting schema could not be prepared; the reporting endpoints will fail until it exists.")
+    try:
+        with Session(engine) as session:
+            interrupted = rfp_store.interrupt_stale(session)
+        if interrupted:
+            logger.warning("%d RFP ticket(s) were still analyzing when the service stopped; they are marked as failed so they can be reprocessed.", interrupted)
+    except Exception:  # the intake tables are checked by the first request; a startup check must not take the API down
+        logger.exception("RFP tickets could not be checked at startup.")
     yield
 
 
@@ -99,6 +109,7 @@ app.include_router(reporting_router)
 app.include_router(tasks_router)
 app.include_router(knowledge_router)
 app.include_router(agent_router)
+app.include_router(rfp_router)
 
 
 @app.get("/health", tags=["health"])

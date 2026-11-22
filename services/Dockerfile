@@ -34,6 +34,9 @@ COPY --from=process . /app/data/process
 COPY requirements.txt /app/requirements.txt
 RUN uv pip install --system -r requirements.txt
 
+# Datos de NLTK que py-readability-metrics necesita para separar frases (intake de RFP). Si la descarga falla, el intake sigue: las métricas quedan vacías con una nota.
+RUN python -c "import nltk; nltk.download('punkt_tab', download_dir='/usr/local/share/nltk_data', quiet=True)" || true
+
 COPY . /app/services
 
 # Entrypoint: crea una clave JWT aleatoria de desarrollo si no hay ninguna configurada.

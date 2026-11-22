@@ -119,6 +119,8 @@ services:
       - ./packages/shared:/app/packages/shared
       - ./data/pipelines:/app/data/pipelines
       - ./data/process:/app/data/process
+      # PDFs de RFP subidos desde el backoffice: el intake los guarda en data/raw/rfp (artefacto de ejecución, no se versiona).
+      - ./data/raw:/app/data/raw
       # Documentos que `setup()` indexa (solo lectura).
       - ./docs/company-knowledge-base:/app/docs/company-knowledge-base:ro
       - api-data:/data

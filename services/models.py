@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import DDL, CheckConstraint, Column, Date, DateTime, Float, Index, Integer, JSON, Numeric, Text, Uuid, event, text
+from sqlalchemy import DDL, Boolean, CheckConstraint, Column, Date, DateTime, Float, ForeignKey, Index, Integer, JSON, Numeric, Text, Uuid, event, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 from trackflow_shared.incidents import BRANCHES, CATEGORIES, ORIGINS, STATUSES
@@ -332,3 +332,84 @@ class GuardrailEvent(SQLModel, table=True):
     actor: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     run_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     excerpt: str = Field(default="", sa_column=Column(Text, nullable=False))
+
+
+def _json_column(default: str) -> Column:
+    return Column(JSON().with_variant(JSONB(), "postgresql"), nullable=False, server_default=text(f"'{default}'"))
+
+
+class RfpTicket(SQLModel, table=True):
+    """One uploaded RFP and its lifecycle (Milestone 9). The same row continues through Parts 2 and 3.
+
+    Part 1 uses `analyzing` -> `intake_complete` | `discarded` (and `failed` when the pipeline itself broke, so a ticket never stays `analyzing` forever).
+    The columns after `handoff` belong to the classifier, the metadata extraction and the synthesizer; the pipeline in `data/pipelines/rfp_intake` writes them.
+    """
+
+    __tablename__ = "rfp_tickets"
+    __table_args__ = (Index("ix_rfp_tickets_status", "status"), Index("ix_rfp_tickets_created_at", "created_at"))
+
+    ticket_id: str = Field(sa_column=Column(Text, primary_key=True))
+    rfp_id: str = Field(sa_column=Column(Text, nullable=False, unique=True))  # TF-RFP-<year>-<n>: what Sales quotes to the client
+    status: str = Field(default="analyzing", sa_column=Column(Text, nullable=False))
+    raw_pdf_path: str = Field(sa_column=Column(Text, nullable=False))  # relative to the repository root, under data/raw/
+    original_filename: str = Field(default="", sa_column=Column(Text, nullable=False))
+    uploaded_by: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    created_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
+    updated_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
+    current_step: str = Field(default="queued", sa_column=Column(Text, nullable=False))
+    progress: list = Field(default_factory=list, sa_column=_json_column("[]"))  # [{step, at, detail}]: what the UI shows while it polls
+
+    # converted document (the agents read this, never the PDF)
+    markdown: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+
+    # classifier
+    is_rfp: bool | None = Field(default=None, sa_column=Column(Boolean, nullable=True))
+    document_type: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # formal_rfp | informal_request | vendor_pitch | other
+    classification_reason: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    classification_confidence: float | None = Field(default=None, sa_column=Column(Float, nullable=True))
+
+    # RFP metadata (CONTEXT section 2.3)
+    client_name: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    client_country: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # US | ES
+    currency: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # USD | EUR, from the country
+    client_contact: dict = Field(default_factory=dict, sa_column=_json_column("{}"))
+    services_requested: list = Field(default_factory=list, sa_column=_json_column("[]"))  # warehousing | last_mile | reverse_logistics
+    monthly_volume: int | None = Field(default=None, sa_column=Column(Integer, nullable=True))  # orders per month, only when the RFP states it
+    deadline: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # ISO date when the RFP gives a full date, else the phrase as written
+    budget_range: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    departments_needed: list = Field(default_factory=list, sa_column=_json_column("[]"))  # warehouse | lastmile | reverse
+    metadata_extra: dict = Field(default_factory=dict, sa_column=_json_column("{}"))  # reference number, SKUs, locations... as written in the RFP
+    open_questions: list = Field(default_factory=list, sa_column=_json_column("[]"))  # what the RFP does not say
+
+    # readability / processing cost
+    readability: dict = Field(default_factory=dict, sa_column=_json_column("{}"))
+
+    # synthesizer and routing
+    summary: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # the Sales-facing text
+    handoff: dict = Field(default_factory=dict, sa_column=_json_column("{}"))  # the contract Part 2 reads (docs/rfp/handoff-contract.md)
+    handoff_state: str = Field(default="not_ready", sa_column=Column(Text, nullable=False))  # not_ready | ready_for_part_2
+    engine: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # llm | rules | mixed: how the agents decided
+    error_message: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+
+
+class DepartmentSection(SQLModel, table=True):
+    """What one department has to say about one RFP. Part 1 fills `key_aspects`; the other columns are for Parts 2 and 3."""
+
+    __tablename__ = "rfp_department_sections"
+    __table_args__ = (Index("ix_rfp_sections_ticket", "ticket_id", "department_id", unique=True),)
+
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=Column(Uuid, primary_key=True, server_default=text("gen_random_uuid()") if _POSTGRES else None),
+    )
+    ticket_id: str = Field(sa_column=Column(Text, ForeignKey("rfp_tickets.ticket_id"), nullable=False))
+    department_id: str = Field(sa_column=Column(Text, nullable=False))  # warehouse | lastmile | reverse
+    owner: str = Field(default="", sa_column=Column(Text, nullable=False))
+    key_aspects: dict = Field(default_factory=dict, sa_column=_json_column("{}"))
+    engine: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    draft_content: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # Part 2
+    evaluation_results: dict = Field(default_factory=dict, sa_column=_json_column("{}"))  # Part 2
+    approval_status: str = Field(default="pending", sa_column=Column(Text, nullable=False))  # Part 3
+    approver: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # Part 3
+    approved_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))  # Part 3
+    created_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
