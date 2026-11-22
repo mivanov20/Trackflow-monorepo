@@ -9,15 +9,17 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from .accounts import AccountStoreError
 from .auth import ACCOUNT_SERVICE_UNAVAILABLE, router as auth_router
-from .database import SERVICE_UNAVAILABLE_MESSAGE, create_db_and_tables, ensure_user_uid_columns
+from .database import SERVICE_UNAVAILABLE_MESSAGE, create_db_and_tables, engine, ensure_user_uid_columns
 from .routers.incident_analysis import router as incident_analysis_router, validate_analysis_config
 from .routers.incidents import router as incidents_router
 from .routers.inventory import router as inventory_router
 from .routers.profiles import router as profiles_router
+from .reporting.router import router as reporting_router
 from .routers.telemetry import router as telemetry_router, validate_telemetry_config
 from .routers.users import router as users_router
 from .mailer import validate_email_config
 from .security import validate_security_config
+from data.pipelines.weekly_performance.schema import ensure_reporting
 
 logger = logging.getLogger("services")
 
@@ -33,6 +35,10 @@ async def lifespan(_: FastAPI):
     validate_telemetry_config()
     create_db_and_tables()
     ensure_user_uid_columns()
+    try:
+        ensure_reporting(engine)
+    except Exception:  # a missing right on the `reporting` schema must not take the whole API down
+        logger.exception("The reporting schema could not be prepared; the reporting endpoints will fail until it exists.")
     yield
 
 
@@ -84,6 +90,7 @@ app.include_router(inventory_router)
 app.include_router(incidents_router)
 app.include_router(incident_analysis_router)
 app.include_router(telemetry_router)
+app.include_router(reporting_router)
 
 
 @app.get("/health", tags=["health"])

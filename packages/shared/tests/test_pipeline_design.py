@@ -40,9 +40,10 @@ def table_rows(text: str) -> list[list[str]]:
     return [row for row in rows if not set("".join(row)) <= set("-: ")][1:]  # without the header and its separator
 
 
-def test_the_design_exists_and_is_design_only():
+def test_the_design_exists_and_the_entry_point_it_documents_exists():
     assert (REPO_ROOT / "data" / "pipelines" / "PIPELINE_DESIGN.md").is_file()
-    assert not list((REPO_ROOT / "data" / "pipelines").rglob("*.py")), "part 1 is design only: no pipeline code yet"
+    assert (REPO_ROOT / "data" / "pipelines" / "pipeline.py").is_file()
+    assert "python data/pipelines/pipeline.py" in section("9. Implementation") and "0 4 * * 1" in section("9. Implementation")
 
 
 def test_current_state_and_the_business_gap():
@@ -116,8 +117,9 @@ def test_execution_log_has_at_least_five_fields_with_type_and_justification():
 def test_prefect_mapping_has_a_flow_and_at_least_three_tasks_and_states():
     prefect = section("4. Mapping to Prefect")
     assert "weekly_warehouse_client_performance_flow" in prefect
-    tasks = re.findall(r"\| Task \| `(\w+)`", prefect)
-    assert {"extract_telemetry_events", "transform_weekly_rollup", "load_weekly_rollup"} <= set(tasks)
+    tasks = re.findall(r"\| (?:Optional )?[Tt]ask \| `(\w+)`", prefect)
+    assert {"extract_telemetry_events", "transform_weekly_rollup", "load_weekly_rollup", "write_report_snapshot"} <= set(tasks)
+    assert "return_state=True" in prefect and "cache_key_fn" in prefect
     for state in ("Running", "Completed", "Failed"):
         assert f"**{state}**" in prefect
     blocks = section("4.4 Blocks")
@@ -130,7 +132,7 @@ def test_three_endpoints_each_naming_the_pipeline_function_it_calls():
     paths = {
         "GET /reporting/weekly-warehouse-client-performance": "get_weekly_performance",
         "GET /reporting/pipeline-runs/latest": "get_latest_run",
-        "POST /reporting/pipeline-runs": "start_run",
+        "POST /reporting/pipeline-runs": "trigger_weekly_performance_run",
     }
     for path, function in paths.items():
         row = next((r for r in rows if r[0].startswith(f"`{path}")), None)

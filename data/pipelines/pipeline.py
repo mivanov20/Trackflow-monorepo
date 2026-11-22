@@ -1,0 +1,295 @@
+"""Weekly Warehouse & Client Performance pipeline: the Prefect flow, its tasks and the command line entry point.
+
+It reads the four mandatory metrics from `telemetry_events` (read-only) and writes the KPIs of the company CONTEXT to
+`reporting.weekly_warehouse_client_performance`, one row per warehouse, client and ISO week. Design and decisions:
+data/pipelines/PIPELINE_DESIGN.md.
+
+Run it (from the repository root, with DATABASE_URL pointing to the Supabase PostgreSQL):
+
+    python data/pipelines/pipeline.py                       # the last 2 complete weeks (what the schedule runs)
+    python data/pipelines/pipeline.py --week-start 2026-11-09   # recompute one week
+    python data/pipelines/pipeline.py --weeks-back 8 --trigger backfill
+    python data/pipelines/pipeline.py --serve               # keep running and fire every Monday 04:00 UTC
+
+The reporting cycle is weekly: Monday 04:00 UTC (cron `0 4 * * 1`), when the previous UTC week is complete and before
+Monday morning in Los Angeles and Zaragoza.
+"""
+
+import argparse
+import hashlib
+import json
+import logging
+import sys
+import threading
+import uuid
+from collections.abc import Callable
+from datetime import date, datetime, timedelta
+from pathlib import Path
+
+if __package__ in (None, ""):  # run as a script: the repository root must be importable (`data.pipelines...`)
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+import pandas as pd
+from prefect import flow, get_run_logger, task
+from prefect.runtime import flow_run
+from sqlalchemy.exc import InterfaceError, OperationalError
+
+from data.pipelines.weekly_performance import config, extract, load, runs, snapshot, transform, window
+
+logger = logging.getLogger("data.pipelines.weekly_performance")
+
+# Errors that can heal by themselves (a dropped connection, a timeout). Everything else (a failed data-quality rule,
+# the empty-extract guard, a second run already in progress) would fail again, so retrying it only wastes minutes.
+TRANSIENT_ERRORS = (OperationalError, InterfaceError, OSError)
+
+
+def _transient_only(task_obj, task_run, state) -> bool:
+    try:
+        error = state.result(raise_on_failure=False)
+    except Exception:  # noqa: BLE001 - if the cause cannot be read, retrying is the safe choice
+        return True
+    return isinstance(error, TRANSIENT_ERRORS)
+
+
+class PipelineStageFailed(RuntimeError):
+    """A critical stage failed after its retries; the run log already holds the details."""
+
+
+class PartialLoadFailure(RuntimeError):
+    """Some weeks failed to load while the others were committed. Rerunning repairs them (the load is idempotent)."""
+
+
+# --- tasks ------------------------------------------------------------------------------------------------------
+
+
+# Touches the database. 2 retries, 5 s then 30 s: the usual cause is a connection that has just dropped and comes
+# back within seconds; more waiting would only delay the failure being recorded. Not retried when a run is in progress.
+@task(name="open_run", retries=2, retry_delay_seconds=[5, 30], retry_condition_fn=_transient_only)
+def open_run(trigger: str, triggered_by: str | None, weeks: list[date], run_id: str | None = None) -> str:
+    """Closes abandoned runs and records this one as `running` (or adopts the run a manual trigger already opened)."""
+    opened = runs.open_run(
+        config.reporting_engine(),
+        trigger=trigger,
+        triggered_by=triggered_by,
+        window_start=weeks[0],
+        window_end=weeks[-1],
+        run_id=uuid.UUID(run_id) if run_id else None,
+        prefect_flow_run_id=flow_run.id,
+    )
+    return str(opened)
+
+
+# Reads the source database: 3 retries waiting 30 s, 2 min and 10 min. Extracting twice is harmless (read-only), the job
+# runs weekly with hours of slack before anyone reads the report, and a database restart can take several minutes.
+@task(name="extract_telemetry_events", retries=3, retry_delay_seconds=[30, 120, 600], retry_condition_fn=_transient_only)
+def extract_telemetry_events(window_start: datetime, window_end: datetime) -> dict:
+    """EXTRACT: the four mandatory event types of the window, with the newest timestamp read."""
+    raw = extract.extract_events(config.telemetry_engine(), window_start, window_end)
+    return {"raw": raw, "newest": extract.newest_timestamp(raw)}
+
+
+def transform_cache_key(context, parameters) -> str:
+    """Cache key of the transform task: a fingerprint of WHAT it would compute.
+
+    It is the hash of (the version of the transformation rules, the weeks, the loss-exit setting and every extracted
+    event: timestamp, type, value, tags). The same events and rules give the same key, so a rerun within the hour reuses
+    the previous result; one new event, a different week set or a changed rule gives a new key and recomputes.
+    """
+    raw: pd.DataFrame = parameters["raw"]
+    digest = hashlib.sha256()
+    digest.update(transform.TRANSFORM_VERSION.encode())
+    digest.update(",".join(week.isoformat() for week in parameters["weeks"]).encode())
+    digest.update(str(parameters["count_loss_exits"]).encode())
+    hashable = raw.assign(tags=raw["tags"].map(lambda tags: json.dumps(tags, sort_keys=True, default=str)))
+    digest.update(pd.util.hash_pandas_object(hashable, index=False).values.tobytes())
+    return digest.hexdigest()
+
+
+# The expensive, pure step. Cached for 1 hour (cache_expiration): if the same events were transformed successfully in
+# the last hour, the result is reused and the Pandas work is skipped. No retries: it is deterministic, so a retry fails alike.
+@task(
+    name="transform_weekly_rollup",
+    cache_key_fn=transform_cache_key,
+    cache_expiration=timedelta(hours=1),
+    persist_result=True,
+    retries=0,
+)
+def transform_weekly_rollup(raw: pd.DataFrame, weeks: list[date], count_loss_exits: bool = config.COUNT_LOSS_EXITS) -> dict:
+    """TRANSFORM: raw events to one rollup per week (design 2.5)."""
+    return transform.weekly_rollup(raw, weeks, count_loss_exits)
+
+
+# Writes the database. 2 retries, 30 s then 2 min: safe because the load is idempotent (upsert on the unique key, one
+# transaction per week), so a retry after a half-finished attempt cannot duplicate or corrupt anything.
+@task(name="load_weekly_rollup", retries=2, retry_delay_seconds=[30, 120], retry_condition_fn=_transient_only)
+def load_weekly_rollup(week: date, rollup: pd.DataFrame) -> dict:
+    """LOAD: replaces one week of the destination table inside one transaction."""
+    return load.load_week(config.reporting_engine(), week, rollup)
+
+
+# Optional and non-critical: a failure here is logged and counted, and the run still completes.
+@task(name="write_report_snapshot", retries=0)
+def write_report_snapshot(weeks: list[date]) -> list[str]:
+    """A JSON file per loaded week, for people who want a file next to the table."""
+    return snapshot.write_snapshot(config.reporting_engine(), weeks)
+
+
+# The log must be written even when the data stages struggle: 2 retries on a database blip.
+@task(name="close_run", retries=2, retry_delay_seconds=[5, 30], retry_condition_fn=_transient_only)
+def close_run(
+    run_id: str,
+    status: str,
+    counters: dict[str, int | None],
+    newest: datetime | None,
+    optional_steps_failed: int = 0,
+    error_stage: str | None = None,
+    error: BaseException | None = None,
+) -> None:
+    """Writes the final state of the run to `reporting.pipeline_runs`."""
+    runs.close_run(
+        config.reporting_engine(),
+        uuid.UUID(run_id),
+        status=status,
+        counters=counters,
+        source_max_timestamp=newest,
+        optional_steps_failed=optional_steps_failed,
+        error_stage=error_stage,
+        error=error,
+    )
+
+
+# --- the flow ---------------------------------------------------------------------------------------------------
+
+
+def _outcome(state, stage: str, run_id: str, progress: dict):
+    """The result of a critical task, or the failure recorded in the run log before it is raised.
+
+    The flow asks for the task's state (`return_state=True`) instead of letting the failure propagate, so it can write
+    `failed` with the stage and the cause to the run log first.
+    """
+    if state.is_failed():
+        result = state.result(raise_on_failure=False)
+        cause = result if isinstance(result, BaseException) else RuntimeError(str(result))
+        close_run(run_id, "failed", progress["counters"], progress["newest"], error_stage=stage, error=cause)
+        raise PipelineStageFailed(f"The {stage} stage failed: {cause!r}") from cause
+    return state.result()
+
+
+@flow(name="weekly_warehouse_client_performance_flow")
+def weekly_warehouse_client_performance_flow(
+    week_start: date | None = None,
+    weeks_back: int = config.DEFAULT_WEEKS_BACK,
+    trigger: str = "schedule",
+    triggered_by: str | None = None,
+    run_id: str | None = None,
+) -> dict:
+    """extract -> transform -> load for the requested weeks, with the run recorded from start to end."""
+    log = get_run_logger()
+    weeks = window.weeks_for_run(week_start, weeks_back)
+    window_start, window_end = window.window_bounds(weeks)
+
+    # Critical: with no run row there is no audit trail, so a failure here stops the flow (after its retries).
+    run = open_run(trigger, triggered_by, weeks, run_id)
+    progress: dict = {"counters": {}, "newest": None}
+    stage = "extract"
+    try:
+        extracted = _outcome(extract_telemetry_events(window_start, window_end, return_state=True), "extract", run, progress)
+        progress["newest"] = extracted["newest"]
+        log.info("Extracted %d events for the weeks %s", len(extracted["raw"]), [w.isoformat() for w in weeks])
+
+        stage = "transform"
+        transformed = _outcome(transform_weekly_rollup(extracted["raw"], weeks, config.COUNT_LOSS_EXITS, return_state=True), "transform", run, progress)
+        progress["counters"] = {k: v for k, v in transformed["counters"].items() if k != "value_mismatches"}
+        log.info("Transformed: %s", transformed["counters"])
+
+        # Load week by week. A week that fails does not stop the others: it rolled back, and the rerun repairs it.
+        stage = "load"
+        totals = {"rows_inserted": 0, "rows_updated": 0, "rows_unchanged": 0, "rows_deleted": 0}
+        failed: list[tuple[date, BaseException]] = []
+        for week in weeks:
+            state = load_weekly_rollup(week, transformed["rollups"][week], return_state=True)
+            if state.is_failed():
+                failed.append((week, state.result(raise_on_failure=False)))
+                log.error("Week %s failed to load and was rolled back: %r", week.isoformat(), failed[-1][1])
+                continue
+            for name, amount in state.result().items():
+                totals[name] += amount
+        progress["counters"] = {**progress["counters"], **totals}
+        if failed:
+            first = failed[0][1]
+            summary = PartialLoadFailure(f"{len(failed)} of {len(weeks)} weeks failed to load ({', '.join(w.isoformat() for w, _ in failed)}); first error {type(first).__name__}.")
+            close_run(run, "failed", progress["counters"], progress["newest"], error_stage="load", error=summary)
+            raise summary
+
+        # Optional step: asked for its state so that a failure is logged and counted instead of interrupting the run.
+        optional_failed = 0
+        snapshot_state = write_report_snapshot(weeks, return_state=True)
+        if snapshot_state.is_failed():
+            optional_failed = 1
+            log.warning("The optional snapshot failed and was skipped: %r", snapshot_state.result(raise_on_failure=False))
+
+        close_run(run, "completed", progress["counters"], progress["newest"], optional_steps_failed=optional_failed)
+    except (PipelineStageFailed, PartialLoadFailure):
+        raise
+    except Exception as error:  # an unexpected failure: still leave the run closed and explained
+        close_run(run, "failed", progress["counters"], progress["newest"], error_stage=stage, error=error)
+        raise
+    return {"run_id": run, "status": "completed", "weeks": [w.isoformat() for w in weeks], "optional_steps_failed": optional_failed, **progress["counters"]}
+
+
+# --- starting a run from outside (the API) and from the command line ---------------------------------------------
+
+
+def _in_background(work: Callable[[], None]) -> None:
+    threading.Thread(target=work, name="weekly-performance-run", daemon=True).start()
+
+
+def trigger_weekly_performance_run(
+    engine,
+    triggered_by: str | None,
+    week_start: date | None = None,
+    weeks_back: int = config.DEFAULT_WEEKS_BACK,
+    launcher: Callable[[Callable[[], None]], None] | None = None,
+) -> str:
+    """Opens a manual run and starts the flow without waiting for it. Returns the run id.
+
+    Raises RunAlreadyRunning if a run is in progress and ValueError for an invalid week. `services/reporting/` calls this
+    and nothing else: the pipeline logic stays here.
+    """
+    weeks = window.weeks_for_run(week_start, weeks_back)
+    run_id = runs.open_run(engine, trigger="manual", triggered_by=triggered_by, window_start=weeks[0], window_end=weeks[-1])
+
+    def execute() -> None:
+        try:
+            with config.use_engine(engine):
+                weekly_warehouse_client_performance_flow(week_start=week_start, weeks_back=weeks_back, trigger="manual", triggered_by=triggered_by, run_id=str(run_id))
+        except Exception:  # noqa: BLE001 - the failure is already in the run log; a background thread has nowhere to raise
+            logger.exception("The manual run %s failed", run_id)
+
+    (launcher or _in_background)(execute)
+    return str(run_id)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Command line entry point. Prints a JSON summary and returns 0 on success, 1 on failure."""
+    parser = argparse.ArgumentParser(description="Weekly Warehouse & Client Performance pipeline")
+    parser.add_argument("--week-start", type=date.fromisoformat, help="recompute one week (a Monday, YYYY-MM-DD)")
+    parser.add_argument("--weeks-back", type=int, default=config.DEFAULT_WEEKS_BACK, help="complete weeks to recompute (default 2)")
+    parser.add_argument("--trigger", choices=["schedule", "manual", "backfill"], default="manual")
+    parser.add_argument("--serve", action="store_true", help="stay running and fire the flow every Monday at 04:00 UTC")
+    args = parser.parse_args(argv)
+
+    if args.serve:
+        weekly_warehouse_client_performance_flow.serve(name="weekly-warehouse-client-performance", cron="0 4 * * 1", timezone="UTC", parameters={"trigger": "schedule"})
+        return 0
+    try:
+        summary = weekly_warehouse_client_performance_flow(week_start=args.week_start, weeks_back=args.weeks_back, trigger=args.trigger)
+    except Exception as error:  # noqa: BLE001
+        print(json.dumps({"status": "failed", "error_type": type(error).__name__, "error": runs.sanitize_error(error)[1]}, indent=2))
+        return 1
+    print(json.dumps(summary, indent=2, default=str))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
