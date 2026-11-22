@@ -1,5 +1,7 @@
 # RFP proposal drafting: generation and evaluation, part 2 (Milestone 9)
 
+> Part 3 (human approval per department, arbitration, final document) continues from the handoff described here: [approval-design.md](approval-design.md).
+
 Part 1 ends with a ticket in `intake_complete` and a handoff that says what each active department must answer. Part 2 turns that into **a first draft of each department's section
 of the pricing proposal, reviewed automatically before a person sees it**. It uses the guidelines of `CONTEXT-company.md` section 5 as tests, not as opinions.
 

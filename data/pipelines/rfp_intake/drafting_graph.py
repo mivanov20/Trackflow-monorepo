@@ -49,6 +49,7 @@ class NullReporter:
     def generating(self, department_id: str, iteration: int) -> None: ...
     def drafted(self, department_id: str, iteration: int, content: str, engine: str) -> None: ...
     def evaluated(self, department_id: str, iteration: int, result: dict, outcome: str | None) -> None: ...
+    def trace(self, agent: str, node: str, input: dict, output: dict, department_id: str | None = None) -> None: ...
 
 
 def reporter_of(config: RunnableConfig) -> NullReporter:
@@ -111,6 +112,7 @@ def generate_node(state: SectionState, config: RunnableConfig) -> dict:
     reporter_of(config).generating(brief["department_id"], iteration)
     draft = generators.generate(brief, _facts(state), state.get("feedback"), state.get("draft", {}).get("content"))
     reporter_of(config).drafted(brief["department_id"], iteration, draft.content, draft.engine)
+    reporter_of(config).trace(f"generator:{brief['department_id']}", "generate", {"iteration": iteration, "feedback": (state.get("feedback") or {}).get("text")}, {"characters": len(draft.content), "engine": draft.engine}, brief["department_id"])
     return {"draft": {"content": draft.content, "engine": draft.engine, "derived_numbers": draft.derived_numbers, "iteration": iteration}}
 
 
@@ -119,17 +121,22 @@ def fan_out_evaluators(state: SectionState) -> list[Send]:
     return [Send("evaluate_readability", payload), Send("evaluate_relevance", payload), Send("evaluate_compliance", payload)]
 
 
-def evaluate_readability_node(payload: dict) -> dict:
-    return {"evals": [{"iteration": payload["iteration"], "kind": "readability", "result": evaluators.evaluate_readability(payload["draft"]["content"])}]}
+def evaluate_readability_node(payload: dict, config: RunnableConfig) -> dict:
+    result = evaluators.evaluate_readability(payload["draft"]["content"])
+    reporter_of(config).trace("evaluator:readability", "evaluate_readability", {"iteration": payload["iteration"], "characters": len(payload["draft"]["content"])}, {"pass": result["pass"], "score": result["score"], "problems": result["details"]["problems"]}, payload["brief"]["department_id"])
+    return {"evals": [{"iteration": payload["iteration"], "kind": "readability", "result": result}]}
 
 
-def evaluate_relevance_node(payload: dict) -> dict:
+def evaluate_relevance_node(payload: dict, config: RunnableConfig) -> dict:
     result = evaluators.evaluate_relevance(payload["draft"]["content"], payload["brief"], Facts(**payload["facts"]), payload["draft"]["derived_numbers"])
+    reporter_of(config).trace("evaluator:relevance", "evaluate_relevance", {"iteration": payload["iteration"], "characters": len(payload["draft"]["content"])}, {"pass": result["pass"], "missing_aspects": result["missing_aspects"], "unsupported_figures": result["unsupported_figures"]}, payload["brief"]["department_id"])
     return {"evals": [{"iteration": payload["iteration"], "kind": "relevance", "result": result}]}
 
 
-def evaluate_compliance_node(payload: dict) -> dict:
-    return {"evals": [{"iteration": payload["iteration"], "kind": "compliance", "result": evaluators.evaluate_compliance(payload["draft"]["content"], payload["brief"], Facts(**payload["facts"]))}]}
+def evaluate_compliance_node(payload: dict, config: RunnableConfig) -> dict:
+    result = evaluators.evaluate_compliance(payload["draft"]["content"], payload["brief"], Facts(**payload["facts"]))
+    reporter_of(config).trace("evaluator:compliance", "evaluate_compliance", {"iteration": payload["iteration"], "rules": result["checked_rule_ids"]}, {"pass": result["pass"], "violated": result["rule_ids"]}, payload["brief"]["department_id"])
+    return {"evals": [{"iteration": payload["iteration"], "kind": "compliance", "result": result}]}
 
 
 def decide_node(state: SectionState, config: RunnableConfig) -> dict:
@@ -145,6 +152,7 @@ def decide_node(state: SectionState, config: RunnableConfig) -> dict:
     else:
         outcome = "retry"
     reporter_of(config).evaluated(department_id, iteration, result, None if outcome == "retry" else outcome)
+    reporter_of(config).trace("evaluator:decision", "decide", {"iteration": iteration, "max_iterations": state["max_iterations"]}, {"overall_pass": result["overall_pass"], "outcome": outcome}, department_id)
     update: dict = {"result": result, "outcome": outcome, "attempts": [attempt]}
     if outcome == "retry":
         update.update({"iteration": iteration + 1, "feedback": {"text": result["feedback_for_generator"], "fixes": result["fixes"]}})
@@ -196,10 +204,11 @@ class DraftingState(TypedDict, total=False):
     steps: Annotated[list, operator.add]
 
 
-def assign_node(state: DraftingState) -> dict:
+def assign_node(state: DraftingState, config: RunnableConfig) -> dict:
     started = time.monotonic()
     briefs = build_briefs(state["handoff"])
     detail = "departments: " + ", ".join(brief["department"] for brief in briefs)
+    reporter_of(config).trace("assignment-orchestrator", "assign", {"handoff_departments": state["handoff"].get("departments_needed")}, {"briefs": [brief["department_id"] for brief in briefs]})
     return {"briefs": briefs, "steps": [{"step": "assign", "detail": detail, "seconds": round(time.monotonic() - started, 2)}]}
 
 

@@ -54,3 +54,5 @@ Needs `DATABASE_URL`. Optional: `NIGHTLY_PIPELINE_COMMAND` replaces the pipeline
 interrupted them); `list` shows the tickets. Same pipeline as the API, no HTTP. See [docs/rfp/design.md](../docs/rfp/design.md).
 
 `python scripts/rfp_intake.py draft <ticket_id>` runs the proposal drafting (Milestone 9, part 2) for a ticket whose intake is complete. See [docs/rfp/proposal-design.md](../docs/rfp/proposal-design.md).
+
+`python scripts/rfp_e2e.py [pdf] [--scenario approve|request_changes|volume_conflict] [--trace] [--document]` runs an RFP through the whole workflow (intake, drafting and evaluation, human approval, final document) with simulated approvals, in memory. See [docs/rfp/approval-design.md](../docs/rfp/approval-design.md).

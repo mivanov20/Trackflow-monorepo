@@ -105,3 +105,50 @@ test("a missing readability score is said, not shown as zero", () => {
   assert.equal(scoreText(undefined), "not available");
   assert.equal(scoreText(10.054), "10.1");
 });
+
+test("the page keeps asking while a ticket waits for its owners and through the moment the gates open, and stops when the ticket is done or blocked", () => {
+  const { hasPending, inProgress } = loadRfp();
+  assert.equal(hasPending([{ status: "waiting_for_approval", proposal_state: "ready_for_part_3", approval_state: "waiting" }]), true);
+  assert.equal(inProgress({ status: "under_evaluation", proposal_state: "ready_for_part_3", approval_state: "queued" }), true); // Part 2 finished, the gates are about to open
+  assert.equal(hasPending([{ status: "done", proposal_state: "ready_for_part_3", approval_state: "complete" }, { status: "needs_human_review", proposal_state: "ready_for_part_3", approval_state: "blocked" }]), false);
+});
+
+test("Part 3 can be started by hand only from ready sections whose approvals have not begun", () => {
+  const { canStartApproval, statusLabel } = loadRfp();
+  assert.equal(canStartApproval({ status: "under_evaluation", proposal_state: "ready_for_part_3", approval_state: "not_started" }), true);
+  assert.equal(canStartApproval({ status: "needs_human_review", proposal_state: "ready_for_part_3", approval_state: "not_started" }), true);
+  assert.equal(canStartApproval({ status: "waiting_for_approval", proposal_state: "ready_for_part_3", approval_state: "waiting" }), false);
+  assert.equal(canStartApproval({ status: "under_evaluation", proposal_state: "in_progress", approval_state: "not_started" }), false);
+  assert.equal(statusLabel({ status: "waiting_for_approval", proposal_state: "ready_for_part_3", approval_state: "waiting" }), "Waiting for approval");
+  assert.equal(statusLabel({ status: "done", proposal_state: "ready_for_part_3", approval_state: "complete" }), "Done");
+});
+
+test("a decision that asks for changes or rejects needs a comment, and a capacity must be a whole number", () => {
+  const { checkDecision } = loadRfp();
+  assert.equal(checkDecision({ decision: "approve", comment: "" }), "");
+  assert.match(checkDecision({ decision: "reject", comment: "no" }), /comment is required/);
+  assert.match(checkDecision({ decision: "request_changes", comment: "   " }), /comment is required/);
+  assert.equal(checkDecision({ decision: "request_changes", comment: "Add the onboarding assumptions" }), "");
+  assert.match(checkDecision({ decision: "approve", comment: "", capacity: "3.5" }), /whole number/);
+  assert.match(checkDecision({ decision: "approve", comment: "", capacity: "0" }), /whole number/);
+  assert.equal(checkDecision({ decision: "approve", comment: "", capacity: "3000" }), "");
+});
+
+test("a decision, the document and the trace are read and written at the endpoints of the department and the ticket", async () => {
+  const calls = [];
+  const { rfpApi } = loadRfp(async (path, options) => {
+    calls.push([path, options.method ?? "GET", options.token, options.body]);
+    return {};
+  });
+  const body = { decision: "approve", approver: "Ana Whitfield", comment: "" };
+  await rfpApi.decide("token-1", "t-1", "warehouse", body);
+  await rfpApi.document("token-1", "t-1");
+  await rfpApi.trace("token-1", "t-1");
+  await rfpApi.startApproval("token-1", "t-1");
+  assert.deepEqual(calls, [
+    ["/rfp/tickets/t-1/sections/warehouse/decision", "POST", "token-1", body],
+    ["/rfp/tickets/t-1/document", "GET", "token-1", undefined],
+    ["/rfp/tickets/t-1/trace", "GET", "token-1", undefined],
+    ["/rfp/tickets/t-1/approval", "POST", "token-1", undefined],
+  ]);
+});

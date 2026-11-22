@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { GENERIC_ERROR_MESSAGE, messageFor } from "../../../lib/api-client";
 import { getAccessToken } from "../../../lib/auth";
 import {
-  COUNTRY_LABELS, DRAFT_STATUS_LABELS, MAX_UPLOAD_MB, POLL_INTERVAL_MS, SERVICE_LABELS, canStartProposal, checkPdf, figureLines, hasPending, inProgress, rfpApi, scoreText, statusLabel,
-  type DepartmentSection, type TicketDetail, type TicketSummary,
+  APPROVAL_STATUS_LABELS, COUNTRY_LABELS, DRAFT_STATUS_LABELS, MAX_UPLOAD_MB, POLL_INTERVAL_MS, SERVICE_LABELS, canStartApproval, canStartProposal, checkDecision, checkPdf, figureLines, hasPending, inProgress, rfpApi, scoreText, statusLabel,
+  type DecisionInput, type DecisionKind, type DepartmentSection, type FinalDocument, type TicketDetail, type TicketSummary, type TraceEvent,
 } from "../../../lib/rfp";
 
 function when(value: string | null): string {
@@ -13,7 +13,7 @@ function when(value: string | null): string {
   return date && !Number.isNaN(date.getTime()) ? date.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "";
 }
 
-function StatusBadge({ ticket }: { ticket: Pick<TicketSummary, "status" | "proposal_state"> }) {
+function StatusBadge({ ticket }: { ticket: Pick<TicketSummary, "status" | "proposal_state"> & { approval_state?: string } }) {
   const ready = ticket.status === "under_evaluation" && ticket.proposal_state === "ready_for_part_3";
   return <span className={`incident-status-select rfp-status rfp-status-${ready ? "ready" : ticket.status}`}>{statusLabel(ticket)}</span>;
 }
@@ -31,8 +31,64 @@ function Checks({ section }: { section: DepartmentSection }) {
   );
 }
 
-/** One department's draft of the proposal with its evaluation; a section that used up its attempts is flagged for a person, with the last problems. */
-function DraftPanel({ section }: { section: DepartmentSection }) {
+/** The owner's decision on a section: approve, request changes (optionally with an edited draft) or reject. It is the human approval point: only the owner of the department decides. */
+function ApprovalForm({ section, onDecide }: { section: DepartmentSection; onDecide: (departmentId: string, body: DecisionInput) => Promise<string> }) {
+  const [decision, setDecision] = useState<DecisionKind>("approve");
+  const [comment, setComment] = useState("");
+  const [capacity, setCapacity] = useState("");
+  const [edit, setEdit] = useState(false);
+  const [draft, setDraft] = useState(section.draft_content ?? "");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+  const id = `decision-${section.department_id}`;
+  const canCommit = section.department_id === "warehouse";
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    const found = checkDecision({ decision, comment, capacity });
+    if (found) {
+      setProblem(found);
+      return;
+    }
+    setBusy(true);
+    setProblem("");
+    const body: DecisionInput = { decision, approver: section.responsible, comment: comment.trim() };
+    if (decision === "request_changes" && edit && draft.trim() && draft.trim() !== (section.draft_content ?? "").trim()) body.edited_content = draft.trim();
+    if (canCommit && capacity.trim()) body.commitments = { capacity_orders_per_month: Number(capacity.trim()) };
+    const failure = await onDecide(section.department_id, body);
+    setBusy(false);
+    if (failure) setProblem(failure);
+    else {
+      setComment("");
+      setEdit(false);
+    }
+  }
+
+  return (
+    <form className="rfp-approval" onSubmit={submit} noValidate aria-label={`Decision of ${section.responsible}`}>
+      <p><strong>Decision of {section.responsible}</strong> <span className="incident-muted">(round {section.approval_round} · registered by you)</span></p>
+      <div className="analysis-period" role="radiogroup" aria-label="Decision">
+        {([["approve", "Approve"], ["request_changes", "Request changes"], ["reject", "Reject"]] as [DecisionKind, string][]).map(([value, label]) => (
+          <label key={value} className="rfp-choice"><input type="radio" name={id} value={value} checked={decision === value} disabled={busy} onChange={() => setDecision(value)} /> {label}</label>
+        ))}
+      </div>
+      <label htmlFor={`${id}-comment`}>Comment{decision === "approve" ? " (optional)" : " (what has to change)"}</label>
+      <textarea id={`${id}-comment`} rows={2} maxLength={2000} value={comment} disabled={busy} onChange={(event) => setComment(event.target.value)} />
+      {canCommit && (<><label htmlFor={`${id}-capacity`}>Committed capacity, orders per month (optional)</label><input id={`${id}-capacity`} inputMode="numeric" value={capacity} disabled={busy} onChange={(event) => setCapacity(event.target.value)} /></>)}
+      {decision === "request_changes" && (
+        <>
+          <label className="rfp-choice"><input type="checkbox" checked={edit} disabled={busy} onChange={(event) => setEdit(event.target.checked)} /> Send my own edited draft (it is evaluated again)</label>
+          {edit && <textarea aria-label="Edited draft" rows={8} value={draft} disabled={busy} onChange={(event) => setDraft(event.target.value)} />}
+        </>
+      )}
+      {problem && <p className="inventory-alert" role="alert">{problem}</p>}
+      <div className="analysis-period"><button className="inventory-primary-button" type="submit" disabled={busy}>{busy ? "Sending…" : "Send decision"}</button></div>
+    </form>
+  );
+}
+
+/** One department's draft of the proposal with its evaluation and its approval; a section that used up its attempts is flagged for a person, with the last problems. */
+function DraftPanel({ section, onDecide }: { section: DepartmentSection; onDecide: (departmentId: string, body: DecisionInput) => Promise<string> }) {
   const result = section.evaluation_result;
   const review = section.draft_status === "needs_human_review";
   return (
@@ -41,6 +97,12 @@ function DraftPanel({ section }: { section: DepartmentSection }) {
       <p className="incident-muted">Owner: <strong>{section.owner}</strong> · attempts: {section.iterations}{section.draft_engine ? ` · written by ${section.draft_engine === "llm" ? "the model" : "rules"}` : ""}</p>
       {review && result && <p className="inventory-warning" role="status"><strong>This section did not pass after {section.iterations} attempts.</strong> {result.feedback_for_generator}</p>}
       <Checks section={section} />
+      <p className="incident-muted">
+        Approval: <strong>{APPROVAL_STATUS_LABELS[section.approval_status] ?? section.approval_status}</strong>
+        {section.approver ? ` by ${section.approver}${section.approved_at ? ` on ${when(section.approved_at)}` : ""}` : ""}
+        {section.approval_history.length > 0 ? ` · ${section.approval_history.map((entry) => `round ${entry.round}: ${entry.decision.replace(/_/g, " ")} (${entry.approver})`).join("; ")}` : ""}
+      </p>
+      {section.awaiting_approval && <ApprovalForm section={section} onDecide={onDecide} />}
       {section.draft_content ? <pre className="rfp-draft">{section.draft_content}</pre> : <p className="incident-muted">No draft yet.</p>}
     </article>
   );
@@ -50,7 +112,68 @@ function List({ items }: { items: string[] }) {
   return items.length === 0 ? <p className="incident-muted">Nothing to report.</p> : <ul className="rfp-list">{items.map((item, index) => <li key={index}>{item}</li>)}</ul>;
 }
 
-function TicketPanel({ ticket }: { ticket: TicketDetail }) {
+/** The final document, once every department approved: read it here or download it as Markdown. */
+function FinalPanel({ ticket }: { ticket: TicketDetail }) {
+  const [document, setDocument] = useState<FinalDocument | null>(null);
+  const [problem, setProblem] = useState("");
+  useEffect(() => {
+    const token = getAccessToken();
+    if (!token || !ticket.document_ready) return;
+    rfpApi.document(token, ticket.ticket_id).then(setDocument).catch((caught) => setProblem(`The document could not be loaded. ${messageFor(caught, GENERIC_ERROR_MESSAGE)}`));
+  }, [ticket.ticket_id, ticket.document_ready]);
+  function download() {
+    if (!document) return;
+    const url = URL.createObjectURL(new Blob([document.content_markdown], { type: "text/markdown" }));
+    const link = window.document.createElement("a");
+    link.href = url;
+    link.download = `${document.rfp_id}-proposal.md`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+  return (
+    <section className="rfp-final" aria-label="Final document">
+      <h3>Final document</h3>
+      {problem && <p className="inventory-alert" role="alert">{problem}</p>}
+      {document && (
+        <>
+          <p className="incident-muted">{document.rfp_id} · {document.currency} · generated {when(document.generated_at)}</p>
+          <div className="analysis-period"><button className="inventory-secondary-button" type="button" onClick={download}>Download Markdown</button></div>
+          <pre className="rfp-draft">{document.content_markdown}</pre>
+        </>
+      )}
+    </section>
+  );
+}
+
+/** Which agent did what, in what order, across the three parts. */
+function TracePanel({ ticket }: { ticket: TicketDetail }) {
+  const [events, setEvents] = useState<TraceEvent[] | null>(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const token = getAccessToken();
+    if (!token || !open) return;
+    rfpApi.trace(token, ticket.ticket_id).then((answer) => setEvents(answer.events)).catch(() => setEvents([]));
+  }, [open, ticket.ticket_id, ticket.updated_at]);
+  return (
+    <details className="rfp-trace" onToggle={(event) => setOpen((event.target as HTMLDetailsElement).open)}>
+      <summary>Trace: which agent did what, in order</summary>
+      {events && events.length > 0 && (
+        <div className="inventory-table-scroll">
+          <table className="inventory-table">
+            <thead><tr><th scope="col">#</th><th scope="col">Part</th><th scope="col">Time</th><th scope="col">Agent</th><th scope="col">Step</th><th scope="col">Department</th><th scope="col">Result</th></tr></thead>
+            <tbody>
+              {events.map((event) => (
+                <tr key={event.seq}><td>{event.seq}</td><td>{event.part}</td><td>{event.at.slice(11, 19)}</td><td>{event.agent}</td><td>{event.node}</td><td>{event.department_id ?? ""}</td><td className="rfp-trace-output">{JSON.stringify(event.output).slice(0, 140)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </details>
+  );
+}
+
+function TicketPanel({ ticket, onDecide }: { ticket: TicketDetail; onDecide: (departmentId: string, body: DecisionInput) => Promise<string> }) {
   const { metadata, readability, classification } = ticket;
   const contact = metadata.client_contact;
   return (
@@ -77,15 +200,17 @@ function TicketPanel({ ticket }: { ticket: TicketDetail }) {
         </div>
       )}
 
-      {["intake_complete", "drafting", "under_evaluation", "needs_human_review"].includes(ticket.status) && (
+      {["intake_complete", "drafting", "under_evaluation", "needs_human_review", "waiting_for_approval", "done"].includes(ticket.status) && (
         <>
+          {ticket.status === "done" && <FinalPanel ticket={ticket} />}
+          {ticket.status === "waiting_for_approval" && <p className="inventory-warning" role="status">{ticket.current_step}. Each owner decides on their own section; the others keep moving.</p>}
+          {ticket.error_message && ["intake_complete", "needs_human_review"].includes(ticket.status) && <p className="inventory-alert" role="alert">{ticket.error_message}</p>}
           {ticket.sections.some((section) => section.draft_content) && (
             <>
               <h3>Proposal draft by department</h3>
-              <div className="rfp-sections">{ticket.sections.map((section) => <DraftPanel key={section.department_id} section={section} />)}</div>
+              <div className="rfp-sections">{ticket.sections.map((section) => <DraftPanel key={section.department_id} section={section} onDecide={onDecide} />)}</div>
             </>
           )}
-          {ticket.error_message && ticket.status === "intake_complete" && <p className="inventory-alert" role="alert">{ticket.error_message}</p>}
           <h3>Summary for Sales</h3>
           <div className="rfp-summary">{(ticket.summary ?? "").split("\n").map((line, index) => (line.trim() ? <p key={index}>{line}</p> : null))}</div>
 
@@ -128,6 +253,7 @@ function TicketPanel({ ticket }: { ticket: TicketDetail }) {
           </p>
           {readability.note && <p className="incident-muted">{readability.note}</p>}
 
+          <TracePanel ticket={ticket} />
           <p className="incident-muted">
             Classified as {classification.document_type?.replace(/_/g, " ")} · decided by {ticket.engine === "llm" ? "the model" : ticket.engine === "mixed" ? "rules and the model" : "rules"} · handoff for the proposal stage: {ticket.handoff_state === "ready_for_part_2" ? "ready" : "not ready"}.
           </p>
@@ -199,6 +325,31 @@ export default function RfpIntakePage() {
       await refresh();
     } catch (caught) {
       setError(`The proposal could not be started. ${messageFor(caught, GENERIC_ERROR_MESSAGE)}`);
+    }
+  }
+
+  /** Sends the owner's decision. Returns the message to show when it fails, or an empty string when it was registered. */
+  async function decide(departmentId: string, body: DecisionInput): Promise<string> {
+    const token = getAccessToken();
+    if (!token || !selectedRef.current) return "Sign in again to continue.";
+    try {
+      await rfpApi.decide(token, selectedRef.current, departmentId, body);
+      await refresh();
+      return "";
+    } catch (caught) {
+      return messageFor(caught, GENERIC_ERROR_MESSAGE);
+    }
+  }
+
+  async function startApproval(ticketId: string) {
+    const token = getAccessToken();
+    if (!token) return;
+    setError("");
+    try {
+      await rfpApi.startApproval(token, ticketId);
+      await refresh();
+    } catch (caught) {
+      setError(`The approvals could not be started. ${messageFor(caught, GENERIC_ERROR_MESSAGE)}`);
     }
   }
 
@@ -285,7 +436,12 @@ export default function RfpIntakePage() {
           <button className="inventory-primary-button" type="button" onClick={() => void startProposal(detail.ticket_id)}>Draft the proposal</button>
         </div>
       )}
-      {detail && <TicketPanel ticket={detail} />}
+      {detail && canStartApproval(detail) && (
+        <div className="analysis-period">
+          <button className="inventory-primary-button" type="button" onClick={() => void startApproval(detail.ticket_id)}>Send the sections for approval</button>
+        </div>
+      )}
+      {detail && <TicketPanel ticket={detail} onDecide={decide} />}
     </>
   );
 }

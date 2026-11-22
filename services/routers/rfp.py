@@ -7,6 +7,10 @@ This router only receives, stores, triggers and reads. The graph, the agents and
     GET  /rfp/tickets/{id}       one ticket: status, progress, metadata, readability, per-department key aspects, the Sales summary and the handoff for Part 2
 
     POST /rfp/tickets/{id}/proposal   (re)starts the proposal drafting of a ticket whose intake is complete (Part 2); it also starts by itself after the intake unless RFP_AUTO_DRAFT=false
+    POST /rfp/tickets/{id}/approval   opens the approval gate of every department (Part 3); it also happens by itself after the drafting unless RFP_AUTO_APPROVAL=false
+    POST /rfp/tickets/{id}/sections/{department}/decision   the owner's approve / request_changes / reject: resumes THAT department's paused branch
+    GET  /rfp/tickets/{id}/document   the final document, once every department approved (`?format=markdown` downloads it)
+    GET  /rfp/tickets/{id}/trace      which agent did what, in what order, across the three parts
 
 Same API and same database as the rest of TrackFlow: no second service.
 """
@@ -16,13 +20,15 @@ import os
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import PlainTextResponse
+from pydantic import BaseModel, Field
 from sqlmodel import Session
 
 from data.pipelines.rfp_intake import DEPARTMENTS, run_intake
-from data.pipelines.rfp_intake import proposal_runner, proposal_store, store
+from data.pipelines.rfp_intake import approval_runner, approval_store, proposal_runner, proposal_store, store, trace
 from data.pipelines.rfp_intake.config import MAX_UPLOAD_BYTES, raw_dir, relative_to_root
 
-from ..accounts import User
+from ..accounts import Role, User
 from ..auth import get_current_user
 from ..database import get_session
 
@@ -37,8 +43,33 @@ def auto_draft() -> bool:
     return os.getenv("RFP_AUTO_DRAFT", "true").lower() not in ("0", "false", "no")
 
 
+def auto_approval() -> bool:
+    """After the drafting, the approval gates of the departments open by themselves. `RFP_AUTO_APPROVAL=false` leaves the ticket ready for approval until someone starts it."""
+    return os.getenv("RFP_AUTO_APPROVAL", "true").lower() not in ("0", "false", "no")
+
+
+def approver_roles() -> set[str]:
+    """Accounts that may register a department owner's decision (the owners are named people, the backoffice accounts are staff): `RFP_APPROVER_ROLES`, default admin and manager."""
+    return {role.strip() for role in os.getenv("RFP_APPROVER_ROLES", "admin,manager").split(",") if role.strip()}
+
+
+def start_approvals(ticket_id: str, engine) -> None:
+    from sqlmodel import Session
+
+    with Session(engine) as session:
+        ticket = store.get_ticket(session, ticket_id)
+        if approval_runner.can_start(ticket) is not None:
+            return
+    approval_store.mark_queued(engine, ticket_id)
+    try:
+        approval_runner.workflow_for(engine).start(ticket_id)
+    except Exception:  # noqa: BLE001 - the drafting result is intact; the approvals can be started by hand
+        logger.exception("rfp approval: ticket %s could not open its approval gates", ticket_id)
+        approval_store.mark_queued(engine, ticket_id, "not_started")
+
+
 def process_ticket(ticket_id: str, engine) -> None:
-    """The background task of an upload: Part 1 (intake), then Part 2 (proposal drafting) when the intake completed."""
+    """The background task of an upload: Part 1 (intake), Part 2 (proposal drafting) when the intake completed, and the opening of Part 3's approval gates when the drafting is ready."""
     from sqlmodel import Session
 
     run_intake(ticket_id, engine)
@@ -50,6 +81,8 @@ def process_ticket(ticket_id: str, engine) -> None:
             return
         proposal_store.mark_queued(session, ticket_id)
     proposal_runner.run_proposal(ticket_id, engine)
+    if auto_approval():
+        start_approvals(ticket_id, engine)
 
 
 def _iso(value) -> str | None:
@@ -69,6 +102,7 @@ def ticket_summary(ticket) -> dict[str, Any]:
         "departments_needed": ticket.departments_needed,
         "document_type": ticket.document_type,
         "proposal_state": ticket.proposal_state,
+        "approval_state": ticket.approval_state,
         "created_at": _iso(ticket.created_at),
         "updated_at": _iso(ticket.updated_at),
     }
@@ -116,12 +150,21 @@ def ticket_detail(ticket, sections) -> dict[str, Any]:
                 "draft_engine": section.draft_engine,
                 "draft_content": section.draft_content,
                 "evaluation_result": section.evaluation_results or None,
+                "approval_round": section.approval_round,
+                "approver": section.approver,
+                "approved_at": _iso(section.approved_at),
+                "approval_comment": section.approval_comment,
+                "approval_history": section.approval_history or [],
+                "commitments": section.commitments or {},
+                "awaiting_approval": ticket.approval_state == "waiting" and section.approval_status == "pending",
+                "responsible": DEPARTMENTS[section.department_id]["owner"],
             }
             for section in sections
         ],
         "handoff_state": ticket.handoff_state,
         "handoff": ticket.handoff,
         "part3_handoff": ticket.part3_handoff,
+        "document_ready": ticket.status == "done",
     }
 
 
@@ -184,3 +227,62 @@ def start_proposal(ticket_id: str, background_tasks: BackgroundTasks, user: User
     background_tasks.add_task(proposal_runner.run_proposal, ticket_id, session.get_bind())
     session.refresh(ticket)
     return ticket_summary(ticket)
+
+
+class DecisionBody(BaseModel):
+    """The owner's decision on a section. What it may contain is checked by `approval.validate_decision` before the paused branch is resumed."""
+
+    decision: str = Field(max_length=32)
+    approver: str = Field(max_length=120)
+    comment: str = Field(default="", max_length=4000)
+    edited_content: str | None = Field(default=None, max_length=30000)
+    commitments: dict | None = None
+
+
+@router.post("/tickets/{ticket_id}/approval", status_code=status.HTTP_202_ACCEPTED)
+def open_approvals(ticket_id: str, user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
+    """Opens the approval gate of every department of a ticket whose proposal sections are ready."""
+    ticket = store.get_ticket(session, ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="The ticket was not found.")
+    reason = approval_runner.can_start(ticket)
+    if reason:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=reason)
+    approval_runner.workflow_for(session.get_bind()).start(ticket_id)
+    session.refresh(ticket)
+    return ticket_summary(ticket)
+
+
+@router.post("/tickets/{ticket_id}/sections/{department_id}/decision")
+def decide_section(ticket_id: str, department_id: str, body: DecisionBody, user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
+    """Registers a department owner's decision and resumes that department's branch. Only staff accounts may register decisions; the named owner of the department is the approver."""
+    if user.role.value not in approver_roles():
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only a staff account can register a department owner's decision.")
+    raw = body.model_dump(exclude_none=True)
+    try:
+        outcome = approval_runner.workflow_for(session.get_bind()).submit(ticket_id, department_id, raw, decided_by=user.id)
+    except approval_runner.ApprovalError as error:
+        code = {"not_found": status.HTTP_404_NOT_FOUND, "conflict": status.HTTP_409_CONFLICT}.get(error.kind, status.HTTP_422_UNPROCESSABLE_ENTITY)
+        raise HTTPException(status_code=code, detail=str(error)) from None
+    session.expire_all()
+    ticket = store.get_ticket(session, ticket_id)
+    return {**ticket_summary(ticket), **outcome}
+
+
+@router.get("/tickets/{ticket_id}/document")
+def get_final_document(ticket_id: str, format: str = Query(default="json", pattern="^(json|markdown)$"), user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    """The final document, available once the ticket is `done`."""
+    document = approval_store.get_final_document(session, ticket_id)
+    if document is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="The final document is not ready: every department has to approve its section first.")
+    if format == "markdown":
+        return PlainTextResponse(document.content_markdown, media_type="text/markdown", headers={"Content-Disposition": f'attachment; filename="{document.rfp_id}-proposal.md"'})
+    return {"ticket_id": document.ticket_id, "rfp_id": document.rfp_id, "currency": document.currency, "generated_at": _iso(document.generated_at), "sections": document.sections, "content_markdown": document.content_markdown}
+
+
+@router.get("/tickets/{ticket_id}/trace")
+def get_trace(ticket_id: str, part: int | None = Query(default=None, ge=1, le=3), user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
+    """Which agent did what, in what order: one timeline across the three parts."""
+    if store.get_ticket(session, ticket_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="The ticket was not found.")
+    return {"ticket_id": ticket_id, "events": trace.events(session, ticket_id, part)}

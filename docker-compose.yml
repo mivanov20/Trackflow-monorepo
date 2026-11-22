@@ -112,6 +112,8 @@ services:
       AGENT_MCP_SCOPES: ${AGENT_MCP_SCOPES:-tickets:read inventory:read}
       # Agente de soporte (LangGraph): los checkpoints de cada ejecución se guardan en este archivo del volumen `api-data`.
       AGENT_CHECKPOINT_DB: ${AGENT_CHECKPOINT_DB:-/data/agent-checkpoints.sqlite}
+      # Aprobaciones de RFP (LangGraph): los checkpoints de las pausas por departamento sobreviven a un reinicio en este archivo del volumen `api-data`.
+      RFP_CHECKPOINT_DB: ${RFP_CHECKPOINT_DB:-/data/rfp-checkpoints.sqlite}
       # Recarga fiable sobre carpetas montadas desde Windows y macOS.
       WATCHFILES_FORCE_POLLING: "true"
     volumes:

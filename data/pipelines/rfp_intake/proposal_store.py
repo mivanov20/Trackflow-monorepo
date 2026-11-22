@@ -13,12 +13,11 @@ event (`derive_status`), so it is always what is really happening:
 
 from __future__ import annotations
 
-import threading
-
 from sqlalchemy import inspect, text
 from sqlmodel import Session
 
-from . import store
+from . import store, trace
+from .dblock import LOCK
 from .store import now
 
 DRAFTING, UNDER_EVALUATION, NEEDS_HUMAN_REVIEW = "drafting", "under_evaluation", "needs_human_review"
@@ -82,6 +81,7 @@ def mark_queued(session: Session, ticket_id: str) -> None:
 def begin(session: Session, ticket_id: str) -> None:
     """The drafting starts: every section is `drafting` with no draft yet, and the ticket leaves `intake_complete`."""
     ticket = store.get_ticket(session, ticket_id)
+    previous_status = ticket.status
     for section in store.sections_of(session, ticket_id):
         section.draft_status, section.iterations, section.draft_content, section.evaluation_results, section.draft_engine = "drafting", 0, None, {}, None
         session.add(section)
@@ -92,26 +92,36 @@ def begin(session: Session, ticket_id: str) -> None:
     ticket.updated_at = now()
     session.add(ticket)
     session.commit()
+    trace.status_change(session.get_bind(), ticket_id, 2, previous_status, DRAFTING, "the proposal drafting started from the intake handoff")
 
 
 class DbReporter:
     """Writes what the graph reports: each draft and each evaluation as soon as they exist, and the ticket status derived from the sections."""
 
     def __init__(self, engine, ticket_id: str):
-        self.engine, self.ticket_id, self.lock = engine, ticket_id, threading.Lock()
+        self.engine, self.ticket_id, self.lock = engine, ticket_id, LOCK
 
     def _section(self, session: Session, department_id: str):
         return next(section for section in store.sections_of(session, self.ticket_id) if section.department_id == department_id)
 
-    def _refresh_ticket(self, session: Session, entry: dict | None) -> None:
+    def _refresh_ticket(self, session: Session, entry: dict | None) -> tuple[str, str]:
+        """Updates the ticket from its sections and returns (old, new) status, so the caller records the change once the transaction is committed."""
         ticket = store.get_ticket(session, self.ticket_id)
         sections = store.sections_of(session, self.ticket_id)
+        old = ticket.status
         ticket.status = derive_status(sections)
         ticket.current_step = step_label(ticket.status, sections, finished=False)
         if entry:
             ticket.progress = [*ticket.progress, {**entry, "at": now().isoformat()}]
         ticket.updated_at = now()
         session.add(ticket)
+        return old, ticket.status
+
+    def _announce(self, change: tuple[str, str], reason: str) -> None:
+        trace.status_change(self.engine, self.ticket_id, 2, change[0], change[1], reason)
+
+    def trace(self, agent: str, node: str, input: dict, output: dict, department_id: str | None = None) -> None:
+        trace.record(self.engine, self.ticket_id, 2, agent, node, input, output, department_id)
 
     def generating(self, department_id: str, iteration: int) -> None:
         with self.lock, Session(self.engine) as session:
@@ -119,8 +129,9 @@ class DbReporter:
             section.draft_status = "drafting"
             session.add(section)
             session.flush()
-            self._refresh_ticket(session, {"step": f"draft:{department_id}", "detail": f"Attempt {iteration}: writing the {department_id} section"})
+            change = self._refresh_ticket(session, {"step": f"draft:{department_id}", "detail": f"Attempt {iteration}: writing the {department_id} section"})
             session.commit()
+        self._announce(change, f"{department_id} is being written")
 
     def drafted(self, department_id: str, iteration: int, content: str, engine: str) -> None:
         with self.lock, Session(self.engine) as session:
@@ -128,8 +139,9 @@ class DbReporter:
             section.draft_content, section.iterations, section.draft_engine, section.draft_status = content, iteration, engine, "under_evaluation"
             session.add(section)
             session.flush()
-            self._refresh_ticket(session, {"step": f"evaluate:{department_id}", "detail": f"Attempt {iteration}: readability, relevance and compliance running in parallel"})
+            change = self._refresh_ticket(session, {"step": f"evaluate:{department_id}", "detail": f"Attempt {iteration}: readability, relevance and compliance running in parallel"})
             session.commit()
+        self._announce(change, "every section has a draft: the evaluators are running")
 
     def evaluated(self, department_id: str, iteration: int, result: dict, outcome: str | None) -> None:
         with self.lock, Session(self.engine) as session:
@@ -146,14 +158,16 @@ class DbReporter:
             session.flush()
             verdict = "passed" if result["overall_pass"] else "failed"
             detail = f"Attempt {iteration}: {verdict}" + ("" if result["overall_pass"] else f" ({result['feedback_for_generator'][:200]})") + (f" -> {outcome}" if outcome else " -> back to the generator")
-            self._refresh_ticket(session, {"step": f"result:{department_id}", "detail": detail})
+            change = self._refresh_ticket(session, {"step": f"result:{department_id}", "detail": detail})
             session.commit()
+        self._announce(change, f"{department_id} was evaluated")
 
 
 def finish(session: Session, ticket_id: str, part3: dict) -> str:
     """Every section finished: the Part 3 handoff is stored with the final status, in one transaction. Returns the ticket status."""
     ticket = store.get_ticket(session, ticket_id)
     sections = store.sections_of(session, ticket_id)
+    previous_status = ticket.status
     ticket.status = derive_status(sections)
     ticket.part3_handoff = part3
     ticket.proposal_state = READY_FOR_PART_3
@@ -162,6 +176,7 @@ def finish(session: Session, ticket_id: str, part3: dict) -> str:
     ticket.updated_at = now()
     session.add(ticket)
     session.commit()
+    trace.status_change(session.get_bind(), ticket_id, 2, previous_status, ticket.status, "every section finished: handed to Part 3")
     return ticket.status
 
 
@@ -170,12 +185,14 @@ def fail(session: Session, ticket_id: str, message: str, state: str = "failed") 
     ticket = store.get_ticket(session, ticket_id)
     if ticket is None:
         return
+    previous_status = ticket.status
     ticket.status, ticket.proposal_state, ticket.error_message = "intake_complete", state, message
     ticket.current_step = "Proposal drafting failed"
     ticket.progress = [*ticket.progress, {"step": "proposal_failed", "detail": message, "at": now().isoformat()}]
     ticket.updated_at = now()
     session.add(ticket)
     session.commit()
+    trace.status_change(session.get_bind(), ticket_id, 2, previous_status, "intake_complete", message)
 
 
 def interrupt_stale(session: Session) -> int:

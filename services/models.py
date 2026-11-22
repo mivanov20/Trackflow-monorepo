@@ -396,6 +396,10 @@ class RfpTicket(SQLModel, table=True):
     proposal_state: str = Field(default="not_started", sa_column=Column(Text, nullable=False, server_default=text("'not_started'")))
     part3_handoff: dict = Field(default_factory=dict, sa_column=_json_column("{}"))  # the contract Part 3 reads (docs/rfp/proposal-handoff-contract.md)
 
+    # Part 3: the human approval per department. `status` becomes `waiting_for_approval` while any approval is pending and `done` when the final document is stored;
+    # `approval_state`: not_started | waiting | blocked | complete
+    approval_state: str = Field(default="not_started", sa_column=Column(Text, nullable=False, server_default=text("'not_started'")))
+
 
 class DepartmentSection(SQLModel, table=True):
     """What one department has to say about one RFP. Part 1 fills `key_aspects`; the other columns are for Parts 2 and 3."""
@@ -417,7 +421,47 @@ class DepartmentSection(SQLModel, table=True):
     draft_status: str = Field(default="pending", sa_column=Column(Text, nullable=False, server_default=text("'pending'")))  # Part 2: pending | drafting | under_evaluation | passed | needs_human_review
     iterations: int = Field(default=0, sa_column=Column(Integer, nullable=False, server_default=text("0")))  # Part 2: drafts written so far (KPI: average per section)
     draft_engine: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # Part 2: llm | rules
-    approval_status: str = Field(default="pending", sa_column=Column(Text, nullable=False))  # Part 3
+    approval_status: str = Field(default="pending", sa_column=Column(Text, nullable=False))  # Part 3: pending | approved | rejected (final, rounds exhausted); changes requested go back to `pending` with a new draft
+    approval_round: int = Field(default=0, sa_column=Column(Integer, nullable=False, server_default=text("0")))  # Part 3: approval gates opened for this section (bounded)
+    approval_comment: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # Part 3: the owner's last comment
+    decided_by: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # Part 3: the signed-in account that registered the decision
+    approval_history: list = Field(default_factory=list, sa_column=_json_column("[]"))  # Part 3: every decision: round, decision, comment, approver, at
+    commitments: dict = Field(default_factory=dict, sa_column=_json_column("{}"))  # Part 3: structured commitments the arbitration reads (warehouse capacity, last-mile assumed volume)
     approver: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # Part 3
     approved_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))  # Part 3
     created_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class RfpFinalDocument(SQLModel, table=True):
+    """The final proposal (CONTEXT 2.3 FinalDocument): the approved sections consolidated, generated only when every active department has approved."""
+
+    __tablename__ = "rfp_final_documents"
+
+    ticket_id: str = Field(sa_column=Column(Text, ForeignKey("rfp_tickets.ticket_id"), primary_key=True))
+    rfp_id: str = Field(sa_column=Column(Text, nullable=False))
+    currency: str = Field(sa_column=Column(Text, nullable=False))
+    sections: list = Field(default_factory=list, sa_column=_json_column("[]"))  # department, owner, content, approver, approved_at
+    content_markdown: str = Field(default="", sa_column=Column(Text, nullable=False))
+    generated_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
+
+
+class RfpTraceEvent(SQLModel, table=True):
+    """Which agent did what, in what order, for a ticket across the three parts: agent, node, a summary of its input and output, and the time."""
+
+    __tablename__ = "rfp_trace_events"
+    __table_args__ = (Index("ix_rfp_trace_ticket_seq", "ticket_id", "seq"),)
+
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=Column(Uuid, primary_key=True, server_default=text("gen_random_uuid()") if _POSTGRES else None),
+    )
+    ticket_id: str = Field(sa_column=Column(Text, nullable=False))
+    seq: int = Field(sa_column=Column(Integer, nullable=False))
+    part: int = Field(sa_column=Column(Integer, nullable=False))  # 1 intake, 2 drafting, 3 approval
+    agent: str = Field(sa_column=Column(Text, nullable=False))  # classifier, generator:warehouse, evaluator:compliance, human:Ana Whitfield, arbiter:Miguel Torres...
+    node: str = Field(sa_column=Column(Text, nullable=False))
+    department_id: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    input: dict = Field(default_factory=dict, sa_column=_json_column("{}"))
+    output: dict = Field(default_factory=dict, sa_column=_json_column("{}"))
+    dedupe_key: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))

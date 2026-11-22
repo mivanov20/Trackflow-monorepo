@@ -91,7 +91,7 @@ def allowed_numbers(brief: dict, facts: Facts, derived: list[str]) -> set[str]:
     return allowed | {"1", "2", "3", "24"}  # list markers and "Tier 1..3" are not figures
 
 
-def evaluate_relevance(content: str, brief: dict, facts: Facts, derived: list[str] | None = None) -> dict:
+def evaluate_relevance(content: str, brief: dict, facts: Facts, derived: list[str] | None = None, human_authored: bool = False) -> dict:
     lowered = content.lower()
     missing: list[str] = []
     for aspect, pattern in REQUIRED[brief["department_id"]]:
@@ -112,7 +112,8 @@ def evaluate_relevance(content: str, brief: dict, facts: Facts, derived: list[st
     if aspects.get("open_questions") and not re.search(r"to be confirmed|not stated|open items", lowered):
         missing.append("the open questions of the intake (what the RFP does not say) are not flagged")
     allowed = allowed_numbers(brief, facts, derived or [])
-    unsupported = sorted({number for number in re.findall(r"\d[\d.,]*", content) if re.sub(r"[.,\s]", "", number) and re.sub(r"[.,\s]", "", number) not in allowed})
+    # a text written by the department owner is its own source: the figures the owner commits to (a capacity, a price) are not "invented"
+    unsupported = [] if human_authored else sorted({number for number in re.findall(r"\d[\d.,]*", content) if re.sub(r"[.,\s]", "", number) and re.sub(r"[.,\s]", "", number) not in allowed})
     unsupported = [number.rstrip(".,") for number in unsupported]
     return {"pass": not missing and not unsupported, "missing_aspects": missing, "unsupported_figures": unsupported}
 

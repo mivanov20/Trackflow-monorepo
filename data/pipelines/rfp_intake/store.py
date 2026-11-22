@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func
 from sqlmodel import Session, select
 
+from . import trace
 from .config import ANALYZING, FAILED, HANDOFF_NOT_READY, HANDOFF_READY
 
 
@@ -59,6 +60,7 @@ def create_ticket(session: Session, *, ticket_id: str, raw_pdf_path: str, origin
     session.add(ticket)
     session.commit()
     session.refresh(ticket)
+    trace.record(session.get_bind(), ticket_id, 1, "intake-api", "upload", {"filename": original_filename, "uploaded_by": uploaded_by}, {"status": ANALYZING, "raw_pdf_path": raw_pdf_path})
     return ticket
 
 
@@ -138,6 +140,7 @@ def finish_ticket(session: Session, ticket_id: str, state: dict) -> None:
             session.add(models.DepartmentSection(ticket_id=ticket_id, department_id=section["department_id"], owner=section["owner"], key_aspects=section["key_aspects"], engine=section["engine"]))
     else:
         ticket.handoff_state = HANDOFF_NOT_READY
+    previous_status = ticket.status
     ticket.status = state["outcome"]
     ticket.current_step = "Done" if state["outcome"] == "intake_complete" else "Discarded"
     ticket.error_message = None
@@ -145,6 +148,7 @@ def finish_ticket(session: Session, ticket_id: str, state: dict) -> None:
     ticket.updated_at = now()
     session.add(ticket)
     session.commit()
+    trace.status_change(session.get_bind(), ticket_id, 1, previous_status, state["outcome"], classification["reason"] if state["outcome"] == "discarded" else "the synthesizer finished and the handoff is ready")
 
 
 def fail_ticket(session: Session, ticket_id: str, message: str) -> None:
@@ -152,6 +156,7 @@ def fail_ticket(session: Session, ticket_id: str, message: str) -> None:
     ticket = get_ticket(session, ticket_id)
     if ticket is None:
         return
+    previous_status = ticket.status
     ticket.status = FAILED
     ticket.current_step = "Failed"
     ticket.error_message = message
@@ -159,6 +164,7 @@ def fail_ticket(session: Session, ticket_id: str, message: str) -> None:
     ticket.updated_at = now()
     session.add(ticket)
     session.commit()
+    trace.status_change(session.get_bind(), ticket_id, 1, previous_status, FAILED, message)
 
 
 def reset_for_reprocess(session: Session, ticket_id: str) -> None:
