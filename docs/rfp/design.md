@@ -1,5 +1,7 @@
 # RFP intake: agentic workflow, part 1 (Milestone 9)
 
+> Part 2 (generation and evaluation of the proposal sections) continues from this ticket: [proposal-design.md](proposal-design.md).
+
 Sales receives RFPs as PDFs and cannot tell, by reading one, which departments to involve or what to ask each of them. This part automates that first analysis: the PDF
 is uploaded in the backoffice, becomes Markdown, is classified, and a valid RFP is split across **only the departments its scope needs** and consolidated into one
 Sales-facing result. Writing the proposal itself is the next part.

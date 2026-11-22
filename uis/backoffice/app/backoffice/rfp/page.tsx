@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { GENERIC_ERROR_MESSAGE, messageFor } from "../../../lib/api-client";
 import { getAccessToken } from "../../../lib/auth";
 import {
-  COUNTRY_LABELS, MAX_UPLOAD_MB, POLL_INTERVAL_MS, SERVICE_LABELS, STATUS_LABELS, checkPdf, figureLines, hasPending, rfpApi, scoreText,
-  type TicketDetail, type TicketSummary,
+  COUNTRY_LABELS, DRAFT_STATUS_LABELS, MAX_UPLOAD_MB, POLL_INTERVAL_MS, SERVICE_LABELS, canStartProposal, checkPdf, figureLines, hasPending, inProgress, rfpApi, scoreText, statusLabel,
+  type DepartmentSection, type TicketDetail, type TicketSummary,
 } from "../../../lib/rfp";
 
 function when(value: string | null): string {
@@ -13,8 +13,37 @@ function when(value: string | null): string {
   return date && !Number.isNaN(date.getTime()) ? date.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" }) : "";
 }
 
-function StatusBadge({ status }: { status: TicketSummary["status"] }) {
-  return <span className={`incident-status-select rfp-status rfp-status-${status}`}>{STATUS_LABELS[status]}</span>;
+function StatusBadge({ ticket }: { ticket: Pick<TicketSummary, "status" | "proposal_state"> }) {
+  const ready = ticket.status === "under_evaluation" && ticket.proposal_state === "ready_for_part_3";
+  return <span className={`incident-status-select rfp-status rfp-status-${ready ? "ready" : ticket.status}`}>{statusLabel(ticket)}</span>;
+}
+
+function Checks({ section }: { section: DepartmentSection }) {
+  const result = section.evaluation_result;
+  if (!result) return <p className="incident-muted">Not evaluated yet.</p>;
+  const mark = (ok: boolean) => (ok ? "passed" : "failed");
+  return (
+    <ul className="rfp-list" aria-label={`Evaluation of the ${section.department} section`}>
+      <li>Readability: <strong>{mark(result.readability.pass)}</strong>{typeof result.readability.score === "number" ? ` (grade ${result.readability.score.toFixed(1)})` : ""}</li>
+      <li>Relevance: <strong>{mark(result.relevance.pass)}</strong>{result.relevance.missing_aspects.length > 0 ? ` (missing: ${result.relevance.missing_aspects.join("; ")})` : ""}</li>
+      <li>Compliance: <strong>{mark(result.compliance.pass)}</strong>{result.compliance.rule_ids.length > 0 ? ` (${result.compliance.rule_ids.join(", ")})` : ""}</li>
+    </ul>
+  );
+}
+
+/** One department's draft of the proposal with its evaluation; a section that used up its attempts is flagged for a person, with the last problems. */
+function DraftPanel({ section }: { section: DepartmentSection }) {
+  const result = section.evaluation_result;
+  const review = section.draft_status === "needs_human_review";
+  return (
+    <article className={`rfp-section rfp-draft-section${review ? " rfp-needs-review" : ""}`} aria-label={`${section.department} draft`}>
+      <h4>{section.department} <span className={`incident-status-select rfp-status rfp-draft-${section.draft_status}`}>{DRAFT_STATUS_LABELS[section.draft_status] ?? section.draft_status}</span></h4>
+      <p className="incident-muted">Owner: <strong>{section.owner}</strong> · attempts: {section.iterations}{section.draft_engine ? ` · written by ${section.draft_engine === "llm" ? "the model" : "rules"}` : ""}</p>
+      {review && result && <p className="inventory-warning" role="status"><strong>This section did not pass after {section.iterations} attempts.</strong> {result.feedback_for_generator}</p>}
+      <Checks section={section} />
+      {section.draft_content ? <pre className="rfp-draft">{section.draft_content}</pre> : <p className="incident-muted">No draft yet.</p>}
+    </article>
+  );
 }
 
 function List({ items }: { items: string[] }) {
@@ -26,10 +55,10 @@ function TicketPanel({ ticket }: { ticket: TicketDetail }) {
   const contact = metadata.client_contact;
   return (
     <section className="inventory-table-section analysis-panel" aria-label={`Ticket ${ticket.rfp_id}`} aria-live="polite">
-      <h2>{ticket.rfp_id} <StatusBadge status={ticket.status} /></h2>
+      <h2>{ticket.rfp_id} <StatusBadge ticket={ticket} /></h2>
       <p className="incident-muted">{ticket.original_filename} · uploaded {when(ticket.created_at)} · last update {when(ticket.updated_at)}</p>
 
-      {ticket.status === "analyzing" && (
+      {inProgress(ticket) && (
         <>
           <p className="inventory-hint" role="status">{ticket.current_step}…</p>
           <ol className="rfp-steps" aria-label="Progress">
@@ -48,8 +77,15 @@ function TicketPanel({ ticket }: { ticket: TicketDetail }) {
         </div>
       )}
 
-      {ticket.status === "intake_complete" && (
+      {["intake_complete", "drafting", "under_evaluation", "needs_human_review"].includes(ticket.status) && (
         <>
+          {ticket.sections.some((section) => section.draft_content) && (
+            <>
+              <h3>Proposal draft by department</h3>
+              <div className="rfp-sections">{ticket.sections.map((section) => <DraftPanel key={section.department_id} section={section} />)}</div>
+            </>
+          )}
+          {ticket.error_message && ticket.status === "intake_complete" && <p className="inventory-alert" role="alert">{ticket.error_message}</p>}
           <h3>Summary for Sales</h3>
           <div className="rfp-summary">{(ticket.summary ?? "").split("\n").map((line, index) => (line.trim() ? <p key={index}>{line}</p> : null))}</div>
 
@@ -135,7 +171,7 @@ export default function RfpIntakePage() {
     void refresh();
   }, [refresh]);
 
-  const pending = hasPending(tickets) || (detail !== null && detail.status === "analyzing");
+  const pending = hasPending(tickets) || (detail !== null && inProgress(detail));
   useEffect(() => {
     if (!pending) return;
     const timer = setInterval(() => void refresh(), POLL_INTERVAL_MS);
@@ -151,6 +187,18 @@ export default function RfpIntakePage() {
       setDetail(await rfpApi.get(token, ticketId));
     } catch (caught) {
       setError(`The ticket could not be loaded. ${messageFor(caught, GENERIC_ERROR_MESSAGE)}`);
+    }
+  }
+
+  async function startProposal(ticketId: string) {
+    const token = getAccessToken();
+    if (!token) return;
+    setError("");
+    try {
+      await rfpApi.startProposal(token, ticketId);
+      await refresh();
+    } catch (caught) {
+      setError(`The proposal could not be started. ${messageFor(caught, GENERIC_ERROR_MESSAGE)}`);
     }
   }
 
@@ -219,8 +267,8 @@ export default function RfpIntakePage() {
                   <tr key={ticket.ticket_id} aria-selected={ticket.ticket_id === selected}>
                     <td>{ticket.rfp_id}</td>
                     <td>{ticket.original_filename}</td>
-                    <td><StatusBadge status={ticket.status} /></td>
-                    <td>{ticket.status === "analyzing" ? ticket.current_step : ""}</td>
+                    <td><StatusBadge ticket={ticket} /></td>
+                    <td>{inProgress(ticket) ? ticket.current_step : ""}</td>
                     <td>{ticket.client_name ?? ""}{ticket.client_country ? ` (${ticket.client_country})` : ""}</td>
                     <td>{ticket.departments_needed.join(", ")}</td>
                     <td><button className="inventory-secondary-button" type="button" onClick={() => void open(ticket.ticket_id)}>Open</button></td>
@@ -232,6 +280,11 @@ export default function RfpIntakePage() {
         )}
       </section>
 
+      {detail && canStartProposal(detail) && (
+        <div className="analysis-period">
+          <button className="inventory-primary-button" type="button" onClick={() => void startProposal(detail.ticket_id)}>Draft the proposal</button>
+        </div>
+      )}
       {detail && <TicketPanel ticket={detail} />}
     </>
   );

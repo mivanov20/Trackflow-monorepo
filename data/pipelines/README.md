@@ -18,3 +18,5 @@ Each subfolder or file under `data/pipelines/` should represent **one pipeline o
 The dedicated LangGraph that turns an uploaded RFP PDF into a classified, department-split analysis: `convert` (MarkItDown) → `classify` → `analyze` (metadata + readability) →
 `orchestrate` → parallel `warehouse_worker` / `lastmile_worker` / `reverse_worker` → `synthesize`. The API router (`services/routers/rfp.py`) only triggers `run_intake` and reads
 tickets. Design, limits and the handoff contract for Part 2: [docs/rfp/design.md](../../docs/rfp/design.md), [docs/rfp/handoff-contract.md](../../docs/rfp/handoff-contract.md).
+
+`rfp_intake/` also holds **Milestone 9, part 2**: the `rfp_drafting` graph (`drafting_graph.py`) with one generator per department (`generators.py`), three parallel evaluators (`evaluators.py`, rules of CONTEXT section 5 in `rules.py`) and a bounded generator-evaluator loop that ends in `passed` or `needs_human_review`. See [docs/rfp/proposal-design.md](../../docs/rfp/proposal-design.md) and [docs/rfp/proposal-handoff-contract.md](../../docs/rfp/proposal-handoff-contract.md).

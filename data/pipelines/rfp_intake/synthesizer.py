@@ -108,6 +108,7 @@ def build_handoff(ticket_id: str, rfp_id: str, meta: dict, readability: dict, se
         "client": {"name": meta.get("client_name"), "country": meta.get("client_country"), "currency": meta.get("currency") or COUNTRY_CURRENCY.get(meta.get("client_country") or ""), "contact": meta.get("client_contact") or {}},
         "services_requested": meta["services_requested"],
         "departments_needed": meta["departments_needed"],
+        "services_excluded": meta.get("services_excluded", []),
         "monthly_volume": meta.get("monthly_volume"),
         "deadline": meta.get("deadline"),
         "budget_range": meta.get("budget_range"),

@@ -6,17 +6,20 @@ This router only receives, stores, triggers and reads. The graph, the agents and
     GET  /rfp/tickets            the latest tickets, newest first (what the backoffice list polls)
     GET  /rfp/tickets/{id}       one ticket: status, progress, metadata, readability, per-department key aspects, the Sales summary and the handoff for Part 2
 
+    POST /rfp/tickets/{id}/proposal   (re)starts the proposal drafting of a ticket whose intake is complete (Part 2); it also starts by itself after the intake unless RFP_AUTO_DRAFT=false
+
 Same API and same database as the rest of TrackFlow: no second service.
 """
 
 import logging
+import os
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
 from sqlmodel import Session
 
 from data.pipelines.rfp_intake import DEPARTMENTS, run_intake
-from data.pipelines.rfp_intake import store
+from data.pipelines.rfp_intake import proposal_runner, proposal_store, store
 from data.pipelines.rfp_intake.config import MAX_UPLOAD_BYTES, raw_dir, relative_to_root
 
 from ..accounts import User
@@ -27,6 +30,26 @@ logger = logging.getLogger("trackflow.rfp")
 router = APIRouter(prefix="/rfp", tags=["rfp"])
 
 PDF_MAGIC = b"%PDF-"
+
+
+def auto_draft() -> bool:
+    """After the intake, the proposal drafting starts by itself (the workflow of Milestone 9). `RFP_AUTO_DRAFT=false` leaves the ticket at `intake_complete`."""
+    return os.getenv("RFP_AUTO_DRAFT", "true").lower() not in ("0", "false", "no")
+
+
+def process_ticket(ticket_id: str, engine) -> None:
+    """The background task of an upload: Part 1 (intake), then Part 2 (proposal drafting) when the intake completed."""
+    from sqlmodel import Session
+
+    run_intake(ticket_id, engine)
+    if not auto_draft():
+        return
+    with Session(engine) as session:
+        ticket = store.get_ticket(session, ticket_id)
+        if proposal_runner.can_start(ticket) is not None:
+            return
+        proposal_store.mark_queued(session, ticket_id)
+    proposal_runner.run_proposal(ticket_id, engine)
 
 
 def _iso(value) -> str | None:
@@ -45,6 +68,7 @@ def ticket_summary(ticket) -> dict[str, Any]:
         "client_country": ticket.client_country,
         "departments_needed": ticket.departments_needed,
         "document_type": ticket.document_type,
+        "proposal_state": ticket.proposal_state,
         "created_at": _iso(ticket.created_at),
         "updated_at": _iso(ticket.updated_at),
     }
@@ -87,11 +111,17 @@ def ticket_detail(ticket, sections) -> dict[str, Any]:
                 "key_aspects": section.key_aspects,
                 "approval_status": section.approval_status,
                 "engine": section.engine,
+                "draft_status": section.draft_status,
+                "iterations": section.iterations,
+                "draft_engine": section.draft_engine,
+                "draft_content": section.draft_content,
+                "evaluation_result": section.evaluation_results or None,
             }
             for section in sections
         ],
         "handoff_state": ticket.handoff_state,
         "handoff": ticket.handoff,
+        "part3_handoff": ticket.part3_handoff,
     }
 
 
@@ -124,7 +154,7 @@ async def upload_rfp(
     except Exception:
         target.unlink(missing_ok=True)  # no ticket, no orphan file
         raise
-    background_tasks.add_task(run_intake, ticket_id, session.get_bind())
+    background_tasks.add_task(process_ticket, ticket_id, session.get_bind())
     logger.info("rfp ticket %s created (%d bytes); analysis scheduled", ticket_id, len(content))
     return ticket_summary(ticket)
 
@@ -140,3 +170,17 @@ def get_rfp_ticket(ticket_id: str, user: User = Depends(get_current_user), sessi
     if ticket is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="The ticket was not found.")
     return ticket_detail(ticket, store.sections_of(session, ticket_id))
+
+
+@router.post("/tickets/{ticket_id}/proposal", status_code=status.HTTP_202_ACCEPTED)
+def start_proposal(ticket_id: str, background_tasks: BackgroundTasks, user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
+    """Starts (or restarts, after a failure) the proposal drafting of a ticket whose intake is complete. Answers at once; the drafting runs in the background."""
+    ticket = store.get_ticket(session, ticket_id)
+    if ticket is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="The ticket was not found.")
+    if proposal_runner.can_start(ticket) is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The proposal can only be drafted for a ticket whose intake is complete.")
+    proposal_store.mark_queued(session, ticket_id)
+    background_tasks.add_task(proposal_runner.run_proposal, ticket_id, session.get_bind())
+    session.refresh(ticket)
+    return ticket_summary(ticket)

@@ -8,6 +8,7 @@ The HTTP layer (`services/routers/rfp.py`) only stores the upload, schedules `ru
 
 from .config import ANALYZING, DEPARTMENTS, DISCARDED, FAILED, INTAKE_COMPLETE
 from .graph import build_graph, compile_graph
+from .proposal_runner import run_proposal
 from .runner import run_intake
 
-__all__ = ["ANALYZING", "DEPARTMENTS", "DISCARDED", "FAILED", "INTAKE_COMPLETE", "build_graph", "compile_graph", "run_intake"]
+__all__ = ["ANALYZING", "DEPARTMENTS", "DISCARDED", "FAILED", "INTAKE_COMPLETE", "build_graph", "compile_graph", "run_intake", "run_proposal"]

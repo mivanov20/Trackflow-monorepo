@@ -391,6 +391,11 @@ class RfpTicket(SQLModel, table=True):
     engine: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # llm | rules | mixed: how the agents decided
     error_message: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
 
+    # Part 2: the proposal drafting. `status` moves intake_complete -> drafting -> under_evaluation (-> needs_human_review when a section exhausts its iterations);
+    # `proposal_state` says where the drafting is without inventing a status: not_started | queued | in_progress | ready_for_part_3 | interrupted
+    proposal_state: str = Field(default="not_started", sa_column=Column(Text, nullable=False, server_default=text("'not_started'")))
+    part3_handoff: dict = Field(default_factory=dict, sa_column=_json_column("{}"))  # the contract Part 3 reads (docs/rfp/proposal-handoff-contract.md)
+
 
 class DepartmentSection(SQLModel, table=True):
     """What one department has to say about one RFP. Part 1 fills `key_aspects`; the other columns are for Parts 2 and 3."""
@@ -409,6 +414,9 @@ class DepartmentSection(SQLModel, table=True):
     engine: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
     draft_content: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # Part 2
     evaluation_results: dict = Field(default_factory=dict, sa_column=_json_column("{}"))  # Part 2
+    draft_status: str = Field(default="pending", sa_column=Column(Text, nullable=False, server_default=text("'pending'")))  # Part 2: pending | drafting | under_evaluation | passed | needs_human_review
+    iterations: int = Field(default=0, sa_column=Column(Integer, nullable=False, server_default=text("0")))  # Part 2: drafts written so far (KPI: average per section)
+    draft_engine: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # Part 2: llm | rules
     approval_status: str = Field(default="pending", sa_column=Column(Text, nullable=False))  # Part 3
     approver: str | None = Field(default=None, sa_column=Column(Text, nullable=True))  # Part 3
     approved_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))  # Part 3
