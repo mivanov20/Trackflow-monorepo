@@ -1,0 +1,107 @@
+# Entorno de desarrollo de TrackFlow: `docker compose up` desde la raíz del repositorio.
+#
+#   ui  -> website (http://localhost:3000) y backoffice (http://localhost:3001), con `next dev`
+#   api -> FastAPI (http://localhost:8000, docs en /docs), con `uvicorn --reload`
+#
+# El código se monta desde el equipo (bind mounts): los cambios se ven sin reconstruir imágenes.
+# Los valores salen de variables de entorno: copia `.env.example` a `.env` para cambiarlos.
+# Aquí solo hay valores por defecto no secretos; ningún secreto vive en este archivo.
+#
+# Los contenedores se hablan por NOMBRE DE SERVICIO (ui -> http://api:8000), nunca por localhost.
+
+name: trackflow
+
+services:
+  ui:
+    build:
+      context: ./uis
+    image: trackflow-ui:dev
+    init: true
+    ports:
+      - "${WEBSITE_HOST_PORT:-3000}:3000"
+      - "${BACKOFFICE_HOST_PORT:-3001}:3001"
+    environment:
+      # Dirección interna de la API: el backoffice la usa desde su servidor, por el nombre del servicio.
+      API_INTERNAL_URL: ${API_INTERNAL_URL:-http://api:8000}
+      # Dirección de la API que usa el NAVEGADOR: una ruta relativa que el propio backoffice reenvía a la API.
+      NEXT_PUBLIC_INVENTORY_API_URL: ${NEXT_PUBLIC_INVENTORY_API_URL:-/backend}
+      # Recarga en caliente fiable sobre carpetas montadas desde Windows y macOS.
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+    volumes:
+      - ./uis:/repo/uis
+      # El backoffice importa ../../../src/... (carpeta `src/` de la raíz del repositorio).
+      - ./src:/repo/src:ro
+      # Dependencias y caché de Next dentro de volúmenes de Docker: no se mezclan con las del equipo
+      # (binarios de Windows) y no ensucian el repositorio.
+      - ui-website-node-modules:/repo/uis/website/node_modules
+      - ui-website-next:/repo/uis/website/.next
+      - ui-backoffice-node-modules:/repo/uis/backoffice/node_modules
+      - ui-backoffice-next:/repo/uis/backoffice/.next
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/ && wget -q -O /dev/null http://127.0.0.1:3001/login"]
+      interval: 10s
+      timeout: 20s
+      retries: 12
+      start_period: 90s
+    networks:
+      - trackflow-net
+
+  api:
+    build:
+      context: ./services
+      additional_contexts:
+        # Librería compartida (validación de incidencias) que requirements.txt instala con `-e ./packages/shared`.
+        shared: ./packages/shared
+    image: trackflow-api:dev
+    init: true
+    ports:
+      - "${API_HOST_PORT:-8000}:8000"
+    environment:
+      # Base de datos: por defecto un SQLite de desarrollo en el volumen `api-data`.
+      # Para usar Supabase, define DATABASE_URL en .env.
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////data/trackflow-dev.db}
+      # Vacío = el contenedor genera una clave aleatoria al arrancar (ver services/docker-entrypoint.sh).
+      JWT_SECRET: ${JWT_SECRET:-}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
+      AUTH_DB_PATH: ${AUTH_DB_PATH:-/data/users.json}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001}
+      # Correo de recuperación de contraseña: `console` escribe el enlace en el log (docker compose logs api).
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-console}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-TrackFlow <onboarding@resend.dev>}
+      # Dirección que abre la persona en su NAVEGADOR (por eso es localhost, no un nombre de servicio).
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3001}
+      PASSWORD_RESET_EXPIRE_MINUTES: ${PASSWORD_RESET_EXPIRE_MINUTES:-30}
+      PASSWORD_RESET_COOLDOWN_SECONDS: ${PASSWORD_RESET_COOLDOWN_SECONDS:-60}
+      ANALYSIS_MAX_UPLOAD_MB: ${ANALYSIS_MAX_UPLOAD_MB:-250}
+      # Recarga fiable sobre carpetas montadas desde Windows y macOS.
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - ./services:/app/services
+      - ./packages/shared:/app/packages/shared
+      - api-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    networks:
+      - trackflow-net
+
+networks:
+  trackflow-net:
+    name: trackflow-net
+
+volumes:
+  api-data:
+  ui-website-node-modules:
+  ui-website-next:
+  ui-backoffice-node-modules:
+  ui-backoffice-next:
