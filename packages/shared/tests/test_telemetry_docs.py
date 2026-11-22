@@ -161,7 +161,7 @@ def test_quick_reference_has_a_row_per_event_with_readiness():
     for e in ev.EVENTS:
         row = next((line for line in section.splitlines() if line.startswith(f"| `{e['type']}` |")), None)
         assert row, e["type"]
-        assert e["emit_at"].replace("|", "\|") in row\|") in row
+        assert e["emit_at"].replace("|", "\\|") in row
 
 
 def test_transport_and_prerequisites_are_specified():
