@@ -1,0 +1,107 @@
+{
+  "seed": 42,
+  "model": "RandomForestRegressor(n_estimators=500, min_samples_leaf=2, max_features=0.7) inside StandardScaler pipeline",
+  "data": {
+    "rows": 120,
+    "first_month": "2016-01-01",
+    "last_month": "2025-12-01",
+    "missing_months": [],
+    "duplicated_months": 0,
+    "null_values": 0,
+    "non_positive_revenue": 0,
+    "values_filled": 0
+  },
+  "split": {
+    "train": [
+      "2016-01-01",
+      "2023-12-01",
+      96
+    ],
+    "test": [
+      "2024-01-01",
+      "2025-12-01",
+      24
+    ],
+    "train_rows_used_after_history_warmup": 84
+  },
+  "metrics_recursive_forecast": {
+    "mse_eur2": 2262685242.618668,
+    "rmse_eur": 47567.69116342171,
+    "rmse_pct_of_mean_monthly_revenue": 3.6616640643392793,
+    "mape_pct": 3.196713540303354,
+    "psi_target_ratio": 0.16072742577628546,
+    "psi_revenue_eur": 5.894543469354877,
+    "psi_shipments": 4.147605221793158,
+    "gini": 0.5972222222222223,
+    "k2_statistic": 1.3332136883279442,
+    "k2_p_value": 0.5134478338482883,
+    "residuals_look_normal_at_5pct": true,
+    "interval_coverage_pct": 79.16666666666666,
+    "mean_monthly_revenue_test_eur": 1299073.0533333335
+  },
+  "metrics_one_step_ahead": {
+    "mse_eur2": 1759695944.216446,
+    "rmse_eur": 41948.72994759729,
+    "rmse_pct_of_mean_monthly_revenue": 3.2291278646693264,
+    "mape_pct": 2.8586394494356084,
+    "psi_target_ratio": 0.16072742577628546,
+    "psi_revenue_eur": 5.894543469354877,
+    "psi_shipments": 4.147605221793158,
+    "gini": 0.6527777777777777,
+    "k2_statistic": 1.267232578102095,
+    "k2_p_value": 0.5306692734111473,
+    "residuals_look_normal_at_5pct": true,
+    "interval_coverage_pct": 95.83333333333334,
+    "mean_monthly_revenue_test_eur": 1299073.0533333335
+  },
+  "baseline_seasonal_naive": {
+    "mse_eur2": 15355054004.47933,
+    "rmse_pct_of_mean_monthly_revenue": 9.538763908559886
+  },
+  "oob_band_log": {
+    "low": -0.05276939028741093,
+    "high": 0.051944313858323085,
+    "oob_rmse_log": 0.03852238492983132
+  },
+  "feature_importance": {
+    "lag_12_rel": 0.5929925564764092,
+    "quarter": 0.13241013724527162,
+    "month_sin": 0.07060724683991323,
+    "month_cos": 0.06099680314007986,
+    "lag_1_rel": 0.06007497566972205,
+    "roll_mean_3_rel": 0.059882212356116626,
+    "roll_cv_6": 0.02303606827248733
+  },
+  "decomposition": {
+    "seasonal_factor_by_month": {
+      "1": 1.013759841047212,
+      "2": 0.8592744211138053,
+      "3": 0.9726825444784367,
+      "4": 0.9888757717836253,
+      "5": 0.9661282266564323,
+      "6": 0.9484488816988018,
+      "7": 0.96787894723366,
+      "8": 0.9681104419389703,
+      "9": 0.9399258322490232,
+      "10": 0.9460014691728219,
+      "11": 1.2295485865153037,
+      "12": 1.1993650361119061
+    },
+    "yearly_growth_pct": {
+      "2017": 9.6,
+      "2018": 1.8,
+      "2019": 9.4,
+      "2020": 2.9,
+      "2021": 8.0,
+      "2022": 2.8,
+      "2023": 10.1
+    },
+    "checks": {
+      "nov_dec_above_average": true,
+      "february_below_average": true,
+      "growth_always_positive": true,
+      "mean_growth_near_6_pct": true,
+      "growth_alternates_high_low": true
+    }
+  }
+}
