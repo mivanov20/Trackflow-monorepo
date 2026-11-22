@@ -15,12 +15,51 @@ test("only a PDF within the size limit is accepted in the browser", () => {
   assert.match(checkPdf({ name: "huge.pdf", size: MAX_UPLOAD_MB * 1024 * 1024 + 1 }), /too large/);
 });
 
-test("the page keeps polling only while a ticket is still being analysed", () => {
-  const { hasPending, isFinal } = loadRfp();
-  assert.equal(hasPending([{ status: "intake_complete" }, { status: "discarded" }, { status: "failed" }]), false);
-  assert.equal(hasPending([{ status: "intake_complete" }, { status: "analyzing" }]), true);
+test("the page keeps polling only while the intake or the drafting is still running", () => {
+  const { hasPending, inProgress } = loadRfp();
+  const done = [
+    { status: "discarded", proposal_state: "not_started" },
+    { status: "failed", proposal_state: "not_started" },
+    { status: "intake_complete", proposal_state: "not_started" },
+    { status: "intake_complete", proposal_state: "failed" },
+    { status: "needs_human_review", proposal_state: "ready_for_part_3" },
+    { status: "under_evaluation", proposal_state: "ready_for_part_3" }, // every section passed: resting state, no Part 3 status exists yet
+  ];
+  assert.equal(hasPending(done), false);
+  for (const running of [
+    { status: "analyzing", proposal_state: "not_started" },
+    { status: "intake_complete", proposal_state: "queued" },
+    { status: "drafting", proposal_state: "in_progress" },
+    { status: "under_evaluation", proposal_state: "in_progress" },
+  ]) assert.equal(inProgress(running), true, JSON.stringify(running));
   assert.equal(hasPending([]), false);
-  assert.equal(isFinal("analyzing"), false);
+});
+
+test("a proposal whose sections all passed reads as ready for approval, and the others keep their status name", () => {
+  const { statusLabel } = loadRfp();
+  assert.equal(statusLabel({ status: "under_evaluation", proposal_state: "ready_for_part_3" }), "Ready for approval");
+  assert.equal(statusLabel({ status: "under_evaluation", proposal_state: "in_progress" }), "Under evaluation");
+  assert.equal(statusLabel({ status: "needs_human_review", proposal_state: "ready_for_part_3" }), "Needs human review");
+  assert.equal(statusLabel({ status: "drafting", proposal_state: "in_progress" }), "Drafting");
+});
+
+test("the proposal can be started only from a finished intake that is not already running", () => {
+  const { canStartProposal } = loadRfp();
+  assert.equal(canStartProposal({ status: "intake_complete", proposal_state: "not_started" }), true);
+  assert.equal(canStartProposal({ status: "intake_complete", proposal_state: "failed" }), true);
+  assert.equal(canStartProposal({ status: "intake_complete", proposal_state: "queued" }), false);
+  assert.equal(canStartProposal({ status: "discarded", proposal_state: "not_started" }), false);
+  assert.equal(canStartProposal({ status: "under_evaluation", proposal_state: "ready_for_part_3" }), false);
+});
+
+test("starting the proposal posts to the ticket's proposal endpoint with the session token", async () => {
+  const calls = [];
+  const { rfpApi } = loadRfp(async (path, options) => {
+    calls.push([path, options.method, options.token]);
+    return {};
+  });
+  await rfpApi.startProposal("token-1", "t-1");
+  assert.deepEqual(calls[0], ["/rfp/tickets/t-1/proposal", "POST", "token-1"]);
 });
 
 test("an upload is a multipart request with the PDF, the session token and a generous timeout", async () => {

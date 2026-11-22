@@ -170,6 +170,7 @@ def reset_for_reprocess(session: Session, ticket_id: str) -> None:
     ticket.current_step = "Queued"
     ticket.error_message = None
     ticket.handoff, ticket.handoff_state, ticket.summary = {}, HANDOFF_NOT_READY, None
+    ticket.proposal_state, ticket.part3_handoff = "not_started", {}
     ticket.progress = [*ticket.progress, {"step": "reprocess", "detail": "Reprocessing requested", "at": now().isoformat()}]
     ticket.updated_at = now()
     session.add(ticket)

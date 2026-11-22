@@ -3,6 +3,7 @@
     python scripts/rfp_intake.py smoke path/to/rfp.pdf       convert + classify + analyse a PDF in memory and print the result (touches no database)
     python scripts/rfp_intake.py reprocess <ticket_id>        run the pipeline again for a ticket (for example one marked `failed` after a restart)
     python scripts/rfp_intake.py reprocess --all-failed       the same for every ticket in `failed`
+    python scripts/rfp_intake.py draft <ticket_id>             run the proposal drafting (part 2) for a ticket whose intake is complete
     python scripts/rfp_intake.py list                          the tickets and their status
 
 `reprocess` and `list` use DATABASE_URL like the API. With LLM_API_URL / LLM_API_KEY / LLM_MODEL set the agents use the model, otherwise their rules.
@@ -72,6 +73,13 @@ def reprocess(ticket_ids: list[str], all_failed: bool) -> int:
     return 0
 
 
+def draft(ticket_id: str) -> int:
+    from data.pipelines.rfp_intake import run_proposal
+
+    print(f"{ticket_id}: {run_proposal(ticket_id, _engine())}")
+    return 0
+
+
 def list_tickets() -> int:
     from sqlmodel import Session
 
@@ -89,12 +97,16 @@ def main(argv=None) -> int:
     sub.add_parser("list")
     one = sub.add_parser("smoke")
     one.add_argument("pdf", type=Path)
+    proposal = sub.add_parser("draft")
+    proposal.add_argument("ticket_id")
     again = sub.add_parser("reprocess")
     again.add_argument("ticket_ids", nargs="*")
     again.add_argument("--all-failed", action="store_true")
     args = parser.parse_args(argv)
     if args.command == "smoke":
         return smoke(args.pdf)
+    if args.command == "draft":
+        return draft(args.ticket_id)
     if args.command == "reprocess":
         if not args.ticket_ids and not args.all_failed:
             parser.error("give a ticket id or --all-failed")

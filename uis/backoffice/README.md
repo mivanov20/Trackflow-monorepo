@@ -83,3 +83,5 @@ Protected routes (same login and layout as inventory) for the centralized incide
 ## RFP intake
 
 `/backoffice/rfp` uploads RFP PDFs (one ticket each), polls their status (`analyzing` → `intake_complete` or `discarded`, or `failed`) and shows, for a processed RFP, the summary for Sales, the key aspects of each department with its owner, the metadata and the processing-cost metrics. The page talks to `/rfp/tickets` of the same API. See [docs/rfp/design.md](../../docs/rfp/design.md).
+
+The same page now follows the ticket after the intake: it shows each department's **proposal draft** with its evaluation (readability, relevance, compliance), the attempts used, and flags sections that need human review. `Draft the proposal` restarts the drafting of a ticket whose intake is complete.

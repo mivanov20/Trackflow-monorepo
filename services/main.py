@@ -25,7 +25,7 @@ from .agent import validate_agent
 from .mailer import validate_email_config
 from .security import validate_security_config
 from data.pipelines.weekly_performance.schema import ensure_reporting
-from data.pipelines.rfp_intake import store as rfp_store
+from data.pipelines.rfp_intake import proposal_store as rfp_proposal_store, store as rfp_store
 from sqlmodel import Session
 
 logger = logging.getLogger("services")
@@ -43,13 +43,14 @@ async def lifespan(_: FastAPI):
     validate_agent()  # compiles the agent graph: a structural mistake stops the API here, not on a user's question
     create_db_and_tables()
     ensure_user_uid_columns()
+    rfp_proposal_store.ensure_columns(engine)  # Part 2 columns on the Part 1 tables of an existing database
     try:
         ensure_reporting(engine)
     except Exception:  # a missing right on the `reporting` schema must not take the whole API down
         logger.exception("The reporting schema could not be prepared; the reporting endpoints will fail until it exists.")
     try:
         with Session(engine) as session:
-            interrupted = rfp_store.interrupt_stale(session)
+            interrupted = rfp_store.interrupt_stale(session) + rfp_proposal_store.interrupt_stale(session)
         if interrupted:
             logger.warning("%d RFP ticket(s) were still analyzing when the service stopped; they are marked as failed so they can be reprocessed.", interrupted)
     except Exception:  # the intake tables are checked by the first request; a startup check must not take the API down

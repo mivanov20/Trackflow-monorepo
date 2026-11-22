@@ -467,3 +467,9 @@ td .status + .small-button { margin-left: 10px; }
 .rfp-list { margin: 0 0 6px; padding-left: 18px; font-size: 13px; line-height: 1.5; }
 .rfp-steps { margin: 8px 0 0; padding-left: 18px; font-size: 12px; line-height: 1.6; }
 .rfp-meta th { width: 220px; text-align: left; }
+.rfp-status-drafting, .rfp-status-under_evaluation, .rfp-draft-drafting, .rfp-draft-under_evaluation { background: #eef4fb; color: #46709a; }
+.rfp-status-ready, .rfp-draft-passed { background: #edf5ea; color: #4e7a43; }
+.rfp-status-needs_human_review, .rfp-draft-needs_human_review { background: #fbf2e7; color: #a36a21; }
+.rfp-draft-pending { background: #f1f1ef; color: #7d7d78; }
+.rfp-needs-review { border-color: #e2c08a; }
+.rfp-draft { margin: 8px 0 0; padding: 10px 12px; background: #f7f9f7; border: 1px solid #e3e9e4; border-radius: 4px; font: 12px/1.55 var(--mono); white-space: pre-wrap; word-break: break-word; max-height: 420px; overflow: auto; }

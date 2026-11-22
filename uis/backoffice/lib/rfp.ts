@@ -1,7 +1,7 @@
 import { apiRequest } from "./api-client";
 
 /** The contract of `/rfp/tickets` (services/routers/rfp.py). The API is the source of truth for every value here. */
-export const TICKET_STATUSES = ["analyzing", "discarded", "intake_complete", "failed"] as const;
+export const TICKET_STATUSES = ["analyzing", "discarded", "intake_complete", "failed", "drafting", "under_evaluation", "needs_human_review"] as const;
 export type TicketStatus = (typeof TICKET_STATUSES)[number];
 
 export const STATUS_LABELS: Record<TicketStatus, string> = {
@@ -9,6 +9,9 @@ export const STATUS_LABELS: Record<TicketStatus, string> = {
   discarded: "Discarded",
   intake_complete: "Intake complete",
   failed: "Failed",
+  drafting: "Drafting",
+  under_evaluation: "Under evaluation",
+  needs_human_review: "Needs human review",
 };
 
 export const MAX_UPLOAD_MB = 10;
@@ -25,6 +28,7 @@ export interface TicketSummary {
   client_country: string | null;
   departments_needed: string[];
   document_type: string | null;
+  proposal_state: string;
   created_at: string | null;
   updated_at: string | null;
 }
@@ -46,6 +50,24 @@ export interface DepartmentSection {
   key_aspects: KeyAspects;
   approval_status: string;
   engine: string | null;
+  draft_status: string;
+  iterations: number;
+  draft_engine: string | null;
+  draft_content: string | null;
+  evaluation_result: EvaluationResult | null;
+}
+
+/** The structured result of the three evaluators for the latest draft of a section (services: `evaluation_results`). */
+export interface EvaluationResult {
+  section_id: string;
+  department_id: string;
+  iteration: number;
+  readability: { pass: boolean; score: number | null; details: { problems?: string[]; word_count?: number } };
+  relevance: { pass: boolean; missing_aspects: string[]; unsupported_figures?: string[] };
+  compliance: { pass: boolean; rule_ids: string[]; violations: string[] };
+  overall_pass: boolean;
+  feedback_for_generator: string;
+  history?: { iteration: number; overall_pass: boolean; feedback_for_generator: string }[];
 }
 
 export interface TicketDetail extends TicketSummary {
@@ -79,15 +101,40 @@ export interface TicketDetail extends TicketSummary {
   summary: string | null;
   sections: DepartmentSection[];
   handoff_state: string;
+  part3_handoff: { needs_human_review?: string[] };
 }
 
-/** A ticket is final when nothing more will change: the page stops polling. */
-export function isFinal(status: TicketStatus): boolean {
-  return status !== "analyzing";
+/**
+ * True while something is still going to change: the intake or the drafting is running (or queued). The page polls only then.
+ * `under_evaluation` is also the resting status of a proposal whose sections all passed, which `proposal_state` tells apart (`ready_for_part_3`).
+ */
+export function inProgress(ticket: Pick<TicketSummary, "status" | "proposal_state">): boolean {
+  if (ticket.proposal_state === "queued") return true;
+  if (ticket.status === "analyzing" || ticket.status === "drafting") return true;
+  return ticket.status === "under_evaluation" && ticket.proposal_state !== "ready_for_part_3";
 }
 
-export function hasPending(tickets: Pick<TicketSummary, "status">[]): boolean {
-  return tickets.some((ticket) => !isFinal(ticket.status));
+export function hasPending(tickets: Pick<TicketSummary, "status" | "proposal_state">[]): boolean {
+  return tickets.some(inProgress);
+}
+
+/** What the badge says. Part 3 statuses do not exist yet, so a proposal whose sections all passed is "Ready for approval" (a label, not a status). */
+export function statusLabel(ticket: Pick<TicketSummary, "status" | "proposal_state">): string {
+  if (ticket.status === "under_evaluation" && ticket.proposal_state === "ready_for_part_3") return "Ready for approval";
+  return STATUS_LABELS[ticket.status];
+}
+
+export const DRAFT_STATUS_LABELS: Record<string, string> = {
+  pending: "Waiting",
+  drafting: "Drafting",
+  under_evaluation: "Being evaluated",
+  passed: "Passed",
+  needs_human_review: "Needs human review",
+};
+
+/** A ticket whose intake is complete can (re)start the proposal when it is not already running. */
+export function canStartProposal(ticket: Pick<TicketSummary, "status" | "proposal_state">): boolean {
+  return ticket.status === "intake_complete" && ticket.proposal_state !== "queued" && ticket.proposal_state !== "in_progress";
 }
 
 export const SERVICE_LABELS: Record<string, string> = {
@@ -136,6 +183,9 @@ export const rfpApi = {
   },
   list(token: string): Promise<TicketSummary[]> {
     return apiRequest<TicketSummary[]>("/rfp/tickets", { token, timeoutMs: 20_000, serviceName: "RFP intake" });
+  },
+  startProposal(token: string, ticketId: string): Promise<TicketSummary> {
+    return apiRequest<TicketSummary>(`/rfp/tickets/${encodeURIComponent(ticketId)}/proposal`, { method: "POST", token, timeoutMs: 20_000, serviceName: "RFP intake" });
   },
   get(token: string, ticketId: string): Promise<TicketDetail> {
     return apiRequest<TicketDetail>(`/rfp/tickets/${encodeURIComponent(ticketId)}`, { token, timeoutMs: 20_000, serviceName: "RFP intake" });

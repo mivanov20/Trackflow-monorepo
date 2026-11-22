@@ -52,3 +52,5 @@ Needs `DATABASE_URL`. Optional: `NIGHTLY_PIPELINE_COMMAND` replaces the pipeline
 
 `python scripts/rfp_intake.py smoke <pdf>` runs the RFP intake agents on one PDF in memory; `reprocess <ticket_id>` / `reprocess --all-failed` runs the pipeline again for tickets (for example after a restart
 interrupted them); `list` shows the tickets. Same pipeline as the API, no HTTP. See [docs/rfp/design.md](../docs/rfp/design.md).
+
+`python scripts/rfp_intake.py draft <ticket_id>` runs the proposal drafting (Milestone 9, part 2) for a ticket whose intake is complete. See [docs/rfp/proposal-design.md](../docs/rfp/proposal-design.md).

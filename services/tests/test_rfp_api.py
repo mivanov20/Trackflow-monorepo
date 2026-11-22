@@ -19,6 +19,7 @@ def isolated(monkeypatch, tmp_path):
     for name in ("LLM_API_URL", "LLM_API_KEY", "LLM_MODEL"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("RFP_RAW_DIR", str(tmp_path / "raw-rfp"))
+    monkeypatch.setenv("RFP_AUTO_DRAFT", "false")  # these tests are about the intake; test_rfp_proposal_api.py covers the drafting that follows it
 
 
 def upload(client, number: int | None = None, *, name: str | None = None, content: bytes | None = None):
