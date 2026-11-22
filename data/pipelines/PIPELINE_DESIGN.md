@@ -1,6 +1,6 @@
 # Weekly Warehouse & Client Performance Pipeline: design
 
-Status: **implemented** (Milestone 6, part 2; designed in part 1). Part 3 splits the stages into subflows and adds the dashboard. Section 9 says how to run it and where the code differs from the first design.
+Status: **implemented** (Milestone 6, part 2; designed in part 1). Part 3 split the stages into subflows, added unit tests and the business dashboard. Section 9 says how to run it and where the code differs from the first design; section 10 covers part 3.
 
 This document designs one new data pipeline for TrackFlow. It turns the telemetry the backoffice already stores into the weekly rollup that Thomas (CEO) and Ana (Head of Warehouse Operations) read on Monday morning, so their directors no longer assemble it by hand on Sunday night.
 
@@ -30,7 +30,7 @@ The three properties this design is built around, and where each is shown:
 
 ### 1.1 What is captured
 
-The backoffice (`uis/backoffice`) records usage events through one function, `track(eventType, properties)` in `lib/telemetry.ts`. Events are queued in the browser and sent in batches (every 10 seconds or at 20 events, with `sendBeacon` when the tab is hidden) to `POST /telemetry/events`. The approved plan (`docs/telemetry/telemetry-plan.md`, schema 1.2.0) defines 38 events; 26 are instrumented in the browser today, including the four mandatory metrics this pipeline needs:
+The backoffice (`uis/backoffice`) records usage events through one function, `track(eventType, properties)` in `lib/telemetry.ts`. Events are queued in the browser and sent in batches (every 10 seconds or at 20 events, with `sendBeacon` when the tab is hidden) to `POST /telemetry/events`. The approved plan (`docs/telemetry/telemetry-plan.md`, schema 1.3.0) defines 38 events; 26 are instrumented in the browser today, including the four mandatory metrics this pipeline needs:
 
 | Event | When it fires | Properties this pipeline uses |
 |---|---|---|
@@ -155,9 +155,9 @@ flowchart LR
     subgraph FLOW["Prefect flow: weekly_warehouse_client_performance_flow"]
         direction LR
         OPEN["open_run<br/>insert pipeline_runs (running)<br/>close abandoned runs"]
-        EXT["EXTRACT<br/>extract_telemetry_events<br/>4 event types, window in SQL"]
-        TRA["TRANSFORM<br/>transform_weekly_rollup<br/>dedupe by eventId, week_start,<br/>group by warehouse, client_id, week"]
-        LOA["LOAD<br/>load_weekly_rollup<br/>one transaction per week:<br/>upsert + delete stale keys"]
+        EXT["EXTRACT<br/>extract_weekly_performance_events_flow<br/>4 event types, window in SQL"]
+        TRA["TRANSFORM<br/>transform_weekly_warehouse_client_kpis_flow<br/>dedupe by eventId, week_start, one task per KPI"]
+        LOA["LOAD<br/>load_weekly_warehouse_client_performance_flow<br/>one transaction per week:<br/>upsert + delete stale keys"]
         CLOSE["close_run<br/>pipeline_runs (completed or failed)"]
         OPEN --> EXT --> TRA --> LOA --> CLOSE
     end
@@ -181,9 +181,9 @@ flowchart LR
 
 | Stage | Task | Input | Output | Fails when |
 |---|---|---|---|---|
-| Extract | `extract_telemetry_events` | window, event types | raw frame (`timestamp`, `event_type`, `tags`) and the newest source timestamp | database unreachable or query error (retried) |
-| Transform | `transform_weekly_rollup` | raw frame | one rollup frame per week, plus counters of what was dropped | a rule below breaks (no retry: it is deterministic) |
-| Load | `load_weekly_rollup` | rollup frames | rows inserted, updated, unchanged and deleted, per week | database error (retried; the transaction rolls back) |
+| Extract | `extract_weekly_performance_events_flow` (task `extract_telemetry_events`) | window, event types | raw frame (`timestamp`, `event_type`, `tags`) and the newest source timestamp | database unreachable or query error (retried) |
+| Transform | `transform_weekly_warehouse_client_kpis_flow` (tasks per KPI, section 10.1) | raw frame | one rollup frame per week, plus counters of what was dropped | a rule below breaks (no retry: it is deterministic) |
+| Load | `load_weekly_warehouse_client_performance_flow` (task `load_weekly_rollup`, one per week) | rollup frames | rows inserted, updated, unchanged and deleted, per week | database error (retried; the transaction rolls back) |
 
 ### 2.5 Transformation rules
 
@@ -354,7 +354,9 @@ Example of a completed row:
 | Flow | `weekly_warehouse_client_performance_flow(week_start: date \| None = None, weeks_back: int = 2, trigger: str = "schedule", triggered_by: str \| None = None)` | the whole pipeline; with no `week_start` it covers the last `weeks_back` complete weeks |
 | Task | `open_run` | recovers abandoned runs, inserts the `running` row, fails fast if another run is `running` |
 | Task | `extract_telemetry_events` | the SQL of 2.3, returns the raw frame and the newest timestamp |
-| Task | `transform_weekly_rollup` | the rules of 2.5, returns one rollup frame per week and the counters |
+| Task | `prepare_telemetry_events` | refine, de-duplicate, type and check the events (the first rules of 2.5); cached |
+| Task | `compute_inbound_volume`, `compute_outbound_throughput`, `compute_stockout_frequency`, `count_discrepancy_events`, `compute_discrepancy_rate` | one task per KPI of the CONTEXT |
+| Task | `assemble_weekly_warehouse_client_rollup` | joins the KPI frames into the rows of the destination table, one frame per week |
 | Task | `load_weekly_rollup` | upsert and stale delete, one transaction per week, returns inserted, updated, unchanged and deleted counts |
 | Task | `close_run` | writes `completed` or `failed`, the counters and the error fields |
 | Optional task | `write_report_snapshot` | a JSON file of the loaded KPI rows. Called with `return_state=True`: if it fails, the failure is logged and counted in `optional_steps_failed`, and the run still completes |
@@ -365,7 +367,7 @@ Task settings:
 | Task | Retries | Why |
 |---|---|---|
 | `extract_telemetry_events` | 3, waiting 30 s, 2 min, 10 min | a transient database error is the likeliest failure, and extracting twice is harmless |
-| `transform_weekly_rollup` | 0, **cached 1 hour** | deterministic, so a retry fails alike. The cache key (`cache_key_fn`) is a hash of the transformation version, the weeks and every extracted event: the same events within the hour reuse the result; one new event recomputes |
+| `prepare_telemetry_events` | 0, **cached 1 hour** | deterministic, so a retry fails alike. The cache key (`cache_key_fn`) is a hash of the transformation version, the weeks and every extracted event: the same events within the hour reuse the result; one new event recomputes |
 | `load_weekly_rollup` | 2, waiting 30 s and 2 min | safe because the load is idempotent (3.1) |
 | `open_run`, `close_run` | 2, waiting 5 s and 30 s | the log must be written even when the data stages struggle |
 | `write_report_snapshot` | 0 | optional: not worth waiting for |
@@ -474,7 +476,7 @@ Two packaging points for the implementation part: `data/pipelines` must be impor
 
 ## 8. How part 2 will verify this design
 
-- Unit tests on `transform_weekly_rollup` with a fixed frame: week boundaries (an event at Sunday 23:59:59 UTC and Monday 00:00:00 UTC), duplicate `eventId`s, loss versus dispatch, a discrepancy with no dispatches.
+- Unit tests on the transformation tasks with a fixed frame: week boundaries (an event at Sunday 23:59:59 UTC and Monday 00:00:00 UTC), duplicate `eventId`s, loss versus dispatch, a discrepancy with no dispatches.
 - A load test on PostgreSQL: run twice and compare the table; inject a failure after the first week and after the second, rerun, compare; change one source event and check only that row changes.
 - A test that the run log row exists and is closed for success, failure and an abandoned run.
 - A guard test: an empty extract for a week that has rows fails the run and keeps the rows.
@@ -526,3 +528,50 @@ It needs `DATABASE_URL` (the Supabase PostgreSQL connection string), or `TELEMET
 - On PostgreSQL the tables come from `reporting_schema.sql`; on SQLite (tests only) the `reporting` schema is an attached database.
 - The optional snapshot is written to `data/process/weekly-performance-snapshots/` (ignored by Git) or to `PIPELINE_SNAPSHOT_DIR`.
 - Tests: `services/tests/test_reporting_pipeline.py` and `test_reporting_api.py` run on SQLite; with `TEST_POSTGRES_URL` set (a scratch database: the tests drop the `reporting` schema and `telemetry_events` in it) the pipeline tests also run on PostgreSQL.
+
+---
+
+## 10. Part 3: subflows, unit tests, dashboard and one enhancement
+
+### 10.1 Topology
+
+The main flow `weekly_warehouse_client_performance_flow` only coordinates and keeps the run log. Each phase is a subflow with explicit inputs and outputs and no shared state, so each can be run, monitored and reused on its own. The main flow asks every critical subflow for its state (`return_state=True`) so a failure is written to the run log, with its stage, before it is raised.
+
+| Subflow | Inputs | Output | Tasks inside |
+|---|---|---|---|
+| `extract_weekly_performance_events_flow` | `window_start`, `window_end` | `{raw, newest}` | `extract_telemetry_events` (3 retries) |
+| `transform_weekly_warehouse_client_kpis_flow` | `raw`, `weeks`, `count_loss_exits` | `{rollups, counters}` | `prepare_telemetry_events` (cached 1 h), `compute_inbound_volume`, `compute_outbound_throughput`, `compute_stockout_frequency`, `count_discrepancy_events`, `compute_discrepancy_rate`, `assemble_weekly_warehouse_client_rollup` |
+| `load_weekly_warehouse_client_performance_flow` | `rollups`, `weeks` | `{totals, failed_weeks}` | `load_weekly_rollup` once per week (2 retries), each called with `return_state=True` so a failing week does not stop the others |
+| `check_telemetry_silence_flow` (optional) | `records_extracted` | none; fails when the source sent nothing | `check_telemetry_silence` |
+| `publish_weekly_performance_snapshot_flow` (optional) | `weeks` | the snapshot file paths | `write_report_snapshot` |
+
+The two optional subflows are called with `return_state=True`: a failure is logged and counted in `optional_steps_failed`, and the run still completes. The transform subflow touches no database, which is what makes the KPI tasks testable in isolation.
+
+### 10.2 Unit tests
+
+`tests/pipelines/test_pipeline.py` tests the transformation tasks with in-memory events shaped like `telemetry_events` rows (timestamp, `event_type`, `value`, `tags` with the `_envelope.eventId`), calling the plain function behind each task (`.fn`): no database, no Prefect backend, no network.
+
+```
+python -m pytest tests/pipelines/test_pipeline.py
+```
+
+They cover each KPI (`compute_inbound_volume`, `compute_outbound_throughput`, `compute_stockout_frequency`, `compute_discrepancy_rate`), the Discrepancy Rate definition of the CONTEXT with a hand-calculated week (2 discrepancies over 8 dispatches is 0.25; a discrepancy with no dispatch is 0), the Monday 00:00 UTC week boundary, no mixing of clients, and defensive behaviour: nine kinds of malformed event are discarded and counted, a frame without the needed columns is refused, a stored value that contradicts the quantity fails the run, and a duplicated event counts once. The subflows, the load and the endpoints are covered by `services/tests/test_reporting_pipeline.py` and `test_reporting_api.py`, which also run on PostgreSQL when `TEST_POSTGRES_URL` is set.
+
+### 10.3 Business dashboard
+
+`uis/backoffice/app/backoffice/reporting/page.tsx` (menu entry "Weekly performance report") reads `GET /reporting/weekly-warehouse-client-performance` and `GET /reporting/pipeline-runs/latest`. It is written for Thomas and Ana, not for engineers:
+
+- one section per KPI of the CONTEXT, titled with its exact name (Inbound Volume, Outbound Throughput, Stockout Frequency, Discrepancy Rate), with what it measures and what it is for, in the CONTEXT's words;
+- one row per warehouse and client, with the number, a bar, its unit in words, and a per-warehouse total shown apart from the client rows;
+- the week shown as "Monday, July 13, 2026 to Sunday, July 19, 2026 (UTC)", with previous, next and most recent week buttons, and when the numbers were last refreshed;
+- plain wording for problems: when the last refresh failed or the source was silent it says the numbers may be out of date or incomplete and who to ask; before the first report it says it is produced every Monday morning.
+
+### 10.4 Enhancement: telling a silent source from a quiet week
+
+**Which design question it answers.** Sections 1.5 and 3.4 of this document say the source is the browser only, that a completed run with `records_extracted = 0` is what an alert watches, and that a stale `source_max_timestamp` means "the producers stopped, not the pipeline". Without a check, a stopped producer would produce a perfectly "successful" run and an empty report that looks like a quiet week.
+
+**Why it was prioritised.** It is the one failure that is invisible to every other safeguard (retries, the transaction, the idempotency guard all see a healthy run), and it would make leadership read zeros as facts. It costs one optional subflow.
+
+**What it does.** `check_telemetry_silence_flow` fails when the weeks of the run contain no event at all; being optional it does not fail the run, it adds one to `optional_steps_failed`, the status endpoint exposes it, and the dashboard shows the warning of 10.3. A genuinely quiet week with at least one event does not trigger it.
+
+The other safeguards the first design asked for were already built in part 2: the concurrency lock (one `running` run, enforced by the database) and the recovery of abandoned runs.

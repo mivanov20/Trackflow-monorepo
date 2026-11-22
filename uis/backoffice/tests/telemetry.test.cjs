@@ -55,7 +55,7 @@ test("track adds the envelope; the caller passes only event type and properties"
   assert.match(event.eventId, UUID);
   assert.match(event.requestId, UUID);
   assert.equal(event.timestamp, "2026-11-21T14:03:22.418Z");
-  assert.equal(event.schemaVersion, "1.2.0");
+  assert.equal(event.schemaVersion, "1.3.0");
   assert.equal(event.sessionId, "c2f6b8d0-31a4-4a9e-8f55-0d6e2b7a9c13");
   assert.equal(event.userId, "b9048e2a-ad79-4f10-b831-e5e2f9762629");
   assert.deepEqual(event.properties, PAGE_VIEW);

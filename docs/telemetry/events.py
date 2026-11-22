@@ -18,7 +18,7 @@ from trackflow_shared.incident_analysis import RULE_KEYS  # noqa: E402
 from trackflow_shared.incidents import BRANCHES, CATEGORIES as INCIDENT_CATEGORIES  # noqa: E402
 from trackflow_shared.incidents import ORIGINS as INCIDENT_ORIGINS, STATUSES as INCIDENT_STATUSES  # noqa: E402
 
-SCHEMA_VERSION = "1.2.0"  # 1.2.0: login_succeeded.is_first_login optional, section telemetry_report. 1.1.0: login_attempt_failed
+SCHEMA_VERSION = "1.3.0"  # 1.3.0: section reporting_weekly_performance. 1.2.0: login_succeeded.is_first_login optional, section telemetry_report. 1.1.0: login_attempt_failed
 
 # --- shared vocabularies -----------------------------------------------------------------
 
@@ -29,7 +29,7 @@ USER_ROLES = ["admin", "manager", "user"]
 DEVICE_CLASSES = ["desktop", "tablet", "mobile"]
 CONNECTION_TYPES = ["4g", "3g", "2g", "slow-2g", "unknown"]
 SECTIONS = [
-    "overview", "inventory_products", "inventory_inbound_order", "inventory_outbound_order", "inventory_order_history", "inventory_stock_count", "telemetry_report",
+    "overview", "inventory_products", "inventory_inbound_order", "inventory_outbound_order", "inventory_order_history", "inventory_stock_count", "telemetry_report", "reporting_weekly_performance",
     "incidents_list", "incidents_new", "incidents_file_analysis", "account_profile", "account_change_password",
     "auth_login", "auth_register", "auth_forgot_password", "auth_reset_password", "other",
 ]
