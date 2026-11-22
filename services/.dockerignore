@@ -1,0 +1,24 @@
+# Fuera del contexto de construcción de la imagen de la API.
+__pycache__
+**/__pycache__
+*.pyc
+**/*.pyc
+.env*
+**/.env*
+tests/
+*.log
+**/*.log
+
+# Entornos virtuales y cachés locales (el .venv de este equipo no sirve dentro de Linux y pesa mucho)
+.venv
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Datos locales: en Docker viven en el volumen `api-data`
+data/
+*.db
+*.db-*
+dev.db
+.git
+.gitignore
