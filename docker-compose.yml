@@ -60,6 +60,8 @@ services:
       additional_contexts:
         # Librería compartida (validación de incidencias) que requirements.txt instala con `-e ./packages/shared`.
         shared: ./packages/shared
+        # Pipelines de datos: services/reporting importa `data.pipelines` (no hay lógica de pipeline en services/).
+        pipelines: ./data/pipelines
     image: trackflow-api:dev
     init: true
     ports:
@@ -90,6 +92,7 @@ services:
     volumes:
       - ./services:/app/services
       - ./packages/shared:/app/packages/shared
+      - ./data/pipelines:/app/data/pipelines
       - api-data:/data
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]

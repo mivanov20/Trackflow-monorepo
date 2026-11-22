@@ -23,6 +23,10 @@ WORKDIR /app
 COPY --from=shared pyproject.toml /app/packages/shared/pyproject.toml
 COPY --from=shared trackflow_shared /app/packages/shared/trackflow_shared
 
+# Pipelines de datos: `services/reporting` importa `data.pipelines` (Compose lo aporta como contexto adicional `pipelines`).
+# `data` no necesita __init__.py: Python lo trata como paquete de espacio de nombres.
+COPY --from=pipelines . /app/data/pipelines
+
 # Dependencias: esta capa se reutiliza mientras no cambie requirements.txt.
 COPY requirements.txt /app/requirements.txt
 RUN uv pip install --system -r requirements.txt

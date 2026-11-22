@@ -1,6 +1,6 @@
 # Weekly Warehouse & Client Performance Pipeline: design
 
-Status: **design only** (Milestone 6, part 1). No orchestration code yet. Part 2 implements it, part 3 splits it into subflows and adds tests.
+Status: **implemented** (Milestone 6, part 2; designed in part 1). Part 3 splits the stages into subflows and adds the dashboard. Section 9 says how to run it and where the code differs from the first design.
 
 This document designs one new data pipeline for TrackFlow. It turns the telemetry the backoffice already stores into the weekly rollup that Thomas (CEO) and Ana (Head of Warehouse Operations) read on Monday morning, so their directors no longer assemble it by hand on Sunday night.
 
@@ -14,7 +14,7 @@ This document designs one new data pipeline for TrackFlow. It turns the telemetr
 | Source (read-only) | `telemetry_events`, four event types |
 | Destination | `reporting.weekly_warehouse_client_performance` (plus the run log `reporting.pipeline_runs`) |
 | Grain | one row per `warehouse` x `client_id` x ISO week (`week_start` = the Monday, UTC) |
-| Orchestration | one Prefect flow, `weekly_warehouse_client_performance_flow`, with five tasks |
+| Orchestration | one Prefect flow, `weekly_warehouse_client_performance_flow`, in `data/pipelines/pipeline.py`, with five tasks and one optional step |
 | Exposed by | `services/reporting/` (three endpoints), which only call functions in `data/pipelines/` |
 | Left untouched | `services/telemetry/analysis.py`, `GET /telemetry/report`, the `telemetry_events` table |
 
@@ -122,7 +122,7 @@ Out of v1, on purpose: any other event type; costs or currencies (this deliverab
 **Query.** The window and the event types are filtered in SQL (inclusive start, exclusive end, UTC), using the `timestamp` and `event_type` indexes; the `tags` dimensions are extracted in Pandas, the same pattern as the technical report:
 
 ```sql
-SELECT timestamp, event_type, tags
+SELECT timestamp, event_type, value, tags
 FROM telemetry_events
 WHERE timestamp >= :window_start        -- Monday 00:00 UTC of the oldest week in the run
   AND timestamp <  :window_end          -- Monday 00:00 UTC after the newest week in the run
@@ -138,6 +138,7 @@ WHERE timestamp >= :window_start        -- Monday 00:00 UTC of the oldest week i
 | `event_type` | `telemetry_events.event_type` | text | which KPI |
 | `warehouse` | `tags.warehouse` | `los_angeles` or `zaragoza` | dimension |
 | `client_id` | `tags.client_id` | text slug, e.g. `purestep-footwear` | dimension |
+| `value` | `telemetry_events.value` | number | cross-check: it must equal `quantity` for the movement events |
 | `quantity` | `tags.quantity` | integer | Inbound Volume |
 | `exit_type` | `tags.exit_type` (outbound only) | `dispatch` or `loss` | Outbound Throughput |
 | `event_id` | `tags._envelope.eventId` | uuid text | de-duplication |
@@ -318,6 +319,7 @@ One row per flow run in `reporting.pipeline_runs`. Minimum fields, with the reas
 | `error_stage` | `text` null: `extract`, `transform`, `load`, `abandoned` | where it broke, to know what state the table is in (3.1) |
 | `error_type` | `text` null | the exception class or guard name, never a value from the data |
 | `error_message` | `text` null, at most 500 characters | readable cause for the person on call; sanitised, no event contents |
+| `optional_steps_failed` | `integer` not null, default 0 | how many optional steps failed while the run still completed (the snapshot), so a silent degradation is visible |
 | `prefect_flow_run_id` | `text` null | the link to Prefect's own logs and task states |
 
 Example of a completed row:
@@ -355,6 +357,7 @@ Example of a completed row:
 | Task | `transform_weekly_rollup` | the rules of 2.5, returns one rollup frame per week and the counters |
 | Task | `load_weekly_rollup` | upsert and stale delete, one transaction per week, returns inserted, updated, unchanged and deleted counts |
 | Task | `close_run` | writes `completed` or `failed`, the counters and the error fields |
+| Optional task | `write_report_snapshot` | a JSON file of the loaded KPI rows. Called with `return_state=True`: if it fails, the failure is logged and counted in `optional_steps_failed`, and the run still completes |
 | Optional second flow | `backfill_weekly_performance_flow(first_week, last_week)` | the same tasks over a long range, `trigger = "backfill"`; planned for later parts, with subflows per stage |
 
 Task settings:
@@ -362,9 +365,14 @@ Task settings:
 | Task | Retries | Why |
 |---|---|---|
 | `extract_telemetry_events` | 3, waiting 30 s, 2 min, 10 min | a transient database error is the likeliest failure, and extracting twice is harmless |
-| `transform_weekly_rollup` | 0 | deterministic: a retry gives the same failure |
+| `transform_weekly_rollup` | 0, **cached 1 hour** | deterministic, so a retry fails alike. The cache key (`cache_key_fn`) is a hash of the transformation version, the weeks and every extracted event: the same events within the hour reuse the result; one new event recomputes |
 | `load_weekly_rollup` | 2, waiting 30 s and 2 min | safe because the load is idempotent (3.1) |
-| `open_run`, `close_run` | 2 | the log must be written even when the data stages struggle |
+| `open_run`, `close_run` | 2, waiting 5 s and 30 s | the log must be written even when the data stages struggle |
+| `write_report_snapshot` | 0 | optional: not worth waiting for |
+
+Retries apply only to errors that can heal by waiting (a dropped connection, a timeout). A failed data-quality rule, the empty-extract guard or a second run already in progress would fail again, so they are not retried.
+
+The flow asks every critical task for its state (`return_state=True`) so a failure is written to the run log, with its stage and cause, before it is raised. The weeks are loaded one task per week: a week that fails does not stop the others, and the run ends `failed` with `error_stage = 'load'` and the weeks that did not load. The rerun repairs them.
 
 ### 4.2 States
 
@@ -410,22 +418,26 @@ Planned layout:
 ```
 data/pipelines/
   PIPELINE_DESIGN.md                 (this file)
-  weekly_performance/
-    flow.py        weekly_warehouse_client_performance_flow and the five tasks
-    extract.py     extract_telemetry_events
-    transform.py   transform_weekly_rollup
-    load.py        load_weekly_rollup
-    runs.py        open_run, close_run, get_latest_run, start_run
+  pipeline.py                        the Prefect flow, its tasks, trigger_weekly_performance_run and the command line
+  weekly_performance/                plain functions the tasks call (no Prefect in them)
+    config.py      names, constants, database engines (read-only telemetry, reporting writer)
+    window.py      which ISO weeks a run covers
+    schema.py      the `reporting` tables; reporting_schema.sql is the same DDL for PostgreSQL
+    extract.py     extract_events
+    transform.py   weekly_rollup
+    load.py        load_week
+    runs.py        open_run, close_run, get_latest_run
     queries.py     get_weekly_performance
+    snapshot.py    write_snapshot
 services/reporting/
   router.py        the three endpoints below (validation, authentication, serialisation only)
 ```
 
 | Endpoint | Calls (in `data/pipelines/weekly_performance/`) | Behaviour |
 |---|---|---|
-| `GET /reporting/weekly-warehouse-client-performance?week_start=YYYY-MM-DD` | `queries.get_weekly_performance(week_start: date \| None)` | `week_start` is optional and must be a Monday; with none it returns the most recent computed week. Answers `{ "week_start", "entries": [ { "warehouse", "client_id", "inbound_units_count", "outbound_orders_count", "stockout_events_count", "discrepancy_events_count", "discrepancy_rate" } ] }`. `404` if no week has been computed, `422` for a date that is not a Monday |
-| `GET /reporting/pipeline-runs/latest` | `runs.get_latest_run(pipeline_name)` | the newest row of `reporting.pipeline_runs`: `run_id`, `status`, `trigger`, `started_at`, `finished_at`, `window_start`, `window_end`, the counters and the error fields. `404` before the first run |
-| `POST /reporting/pipeline-runs` | `runs.start_run(trigger="manual", triggered_by=user_id, week_start, weeks_back)` | starts the flow (a Prefect deployment run) and answers `202` with the `run_id`. `409` if a run is already `running`. Optional body: `week_start`, `weeks_back` (1 to 12) |
+| `GET /reporting/weekly-warehouse-client-performance?week_start=YYYY-MM-DD` | `queries.get_weekly_performance(week_start: date \| None)` | `week_start` is optional and must be a Monday; with none it returns the most recent computed week. Answers `{ "week_start", "entries": [ { "warehouse", "client_id", "inbound_units_count", "outbound_orders_count", "stockout_events_count", "discrepancy_events_count", "discrepancy_rate" } ] }`. `404` if no week has been computed at all, `422` for a date that is not a Monday; a Monday with no rows is a valid empty answer |
+| `GET /reporting/pipeline-runs/latest` | `runs.get_latest_run(engine)` | the newest row of `reporting.pipeline_runs`: `run_id`, `status`, `trigger`, `started_at`, `finished_at`, `window_start`, `window_end`, the counters and the error fields. `404` before the first run |
+| `POST /reporting/pipeline-runs` | `pipeline.trigger_weekly_performance_run(engine, user_id, week_start, weeks_back)` | opens the run, starts the flow in the background and answers `202` with the `run_id`. `409` if a run is already `running`, `422` for a bad body (checked first), `403` unless the user is an `admin` or a `manager`. Optional body: `week_start`, `weeks_back` (1 to 12) |
 
 Access: the KPI and status endpoints need a signed-in user; the manual trigger needs the `admin` or `manager` role, because it spends compute. The accounts have only the roles `admin`, `manager` and `user` today, so Thomas and Ana's access to the future dashboard is a decision for part 3.
 
@@ -478,3 +490,39 @@ The SQL and the rules of this document were run on a real PostgreSQL 16 (a scrat
 - A late event changes only the one row it belongs to (150 to 175 units).
 - A failure injected after the first week committed and before the second week's commit leaves the first week updated and the second **exactly as before**; the rerun repairs the second week, redoes the first as a no-op and leaves no duplicate key.
 - A key the recompute no longer produces is deleted in the same transaction, and an empty extract for a week that has rows fails the run and keeps them.
+
+---
+
+## 9. Implementation (part 2): how to run it, and where it differs from the first design
+
+### 9.1 Run command and schedule
+
+```
+python data/pipelines/pipeline.py                       # the last 2 complete weeks: what the schedule runs
+python data/pipelines/pipeline.py --week-start 2026-11-09   # recompute one week (a Monday)
+python data/pipelines/pipeline.py --weeks-back 8 --trigger backfill
+python data/pipelines/pipeline.py --serve               # stay running and fire every Monday 04:00 UTC
+```
+
+It needs `DATABASE_URL` (the Supabase PostgreSQL connection string), or `TELEMETRY_READ_DATABASE_URL` and `REPORTING_DATABASE_URL` for the two separate roles of section 4.4. It prints a JSON summary and exits `0` on success and `1` on failure.
+
+**Reporting cycle:** weekly, Monday 04:00 UTC (cron `0 4 * * 1`), when the previous UTC week is complete and before Monday morning in Los Angeles and Zaragoza. `--serve` registers that schedule with Prefect; a Prefect deployment with the same cron does the same.
+
+### 9.2 Where the code differs from the first design
+
+| First design | Implemented | Why |
+|---|---|---|
+| `flow.py` holds the flow | `pipeline.py` holds the flow, the tasks, the trigger function and the command line | the briefing asks for `data/pipelines/pipeline.py` as the runnable entry point |
+| the extract read `timestamp`, `event_type` and `tags` | it also reads `value`, for the cross-check of 2.5 | the check needs it |
+| `runs.start_run` starts a manual run | `pipeline.trigger_weekly_performance_run` does, and opens the run row before answering | the endpoint can return the `run_id` at once |
+| 20 log fields | 21: `optional_steps_failed` was added | the optional snapshot needed somewhere to report a failure |
+| no cache | the transform is cached for an hour | the briefing asks for caching of an expensive transformation |
+| the weeks were loaded in one step | each week is its own task; a failing week does not stop the others | partial failure tolerance |
+
+### 9.3 Notes for whoever deploys it
+
+- The API imports `data.pipelines` and Prefect. `services/requirements.txt` lists `prefect`, and the API image gets `data/pipelines` through the additional build context `pipelines` in `docker-compose.yml` (not run in the environment where this was written, which had no Docker).
+- A manual run started by the API runs in a background thread of the API process, with Prefect's temporary local backend. Scheduled runs belong in a Prefect worker or a `--serve` process.
+- On PostgreSQL the tables come from `reporting_schema.sql`; on SQLite (tests only) the `reporting` schema is an attached database.
+- The optional snapshot is written to `data/process/weekly-performance-snapshots/` (ignored by Git) or to `PIPELINE_SNAPSHOT_DIR`.
+- Tests: `services/tests/test_reporting_pipeline.py` and `test_reporting_api.py` run on SQLite; with `TEST_POSTGRES_URL` set (a scratch database: the tests drop the `reporting` schema and `telemetry_events` in it) the pipeline tests also run on PostgreSQL.
