@@ -1,0 +1,100 @@
+{
+  "company": "trackflow",
+  "collection": "trackflow_knowledge",
+  "description": "Retrieval test set of the TrackFlow knowledge base. Each question has ONE correct chunk, identified by (source_document, chunk_index) as produced by data/process/rag_chunking.py from docs/company-knowledge-base/. Recall@3 = share of questions whose correct chunk is among the 3 best results. `off_topic` questions have no answer in the knowledge base and are used to tune the minimum similarity score.",
+  "recall_target": 0.8,
+  "questions": [
+    {
+      "id": "q01-return-window",
+      "question": "What's the standard return window?",
+      "expected_source_document": "returns-policy",
+      "expected_chunk_index": 1,
+      "expected_section": "Returns Policy > Standard return window"
+    },
+    {
+      "id": "q02-international-returns",
+      "question": "A customer bought in the United States and wants to return the product in Spain. Is that return automatic?",
+      "expected_source_document": "returns-policy",
+      "expected_chunk_index": 3,
+      "expected_section": "Returns Policy > International returns (manual handling)"
+    },
+    {
+      "id": "q03-return-costs",
+      "question": "Who pays the return shipping if the product arrived damaged in transit?",
+      "expected_source_document": "returns-policy",
+      "expected_chunk_index": 2,
+      "expected_section": "Returns Policy > Return costs"
+    },
+    {
+      "id": "q04-standard-delivery-time",
+      "question": "How many days does standard shipping take within the same country, and what about express?",
+      "expected_source_document": "sla-delivery",
+      "expected_chunk_index": 0,
+      "expected_section": "Delivery SLA > Service types and delivery times"
+    },
+    {
+      "id": "q05-sla-compensation",
+      "question": "What compensation does a client get if on-time deliveries fall below the committed SLA for two months in a row?",
+      "expected_source_document": "sla-delivery",
+      "expected_chunk_index": 1,
+      "expected_section": "Delivery SLA > Contractual SLA and compensation"
+    },
+    {
+      "id": "q06-black-friday-peak",
+      "question": "A prospect asks us to guarantee delivery times during Black Friday. Can we promise that?",
+      "expected_source_document": "sla-delivery",
+      "expected_chunk_index": 2,
+      "expected_section": "Delivery SLA > High-demand dates (no SLA guarantee)"
+    },
+    {
+      "id": "q07-rural-aragon",
+      "question": "Which carrier best covers rural Aragón?",
+      "expected_source_document": "carrier-coverage",
+      "expected_chunk_index": 1,
+      "expected_section": "Carrier Coverage > Spain carriers (Zaragoza)"
+    },
+    {
+      "id": "q08-heavy-packages-us",
+      "question": "Which carrier gives the best rate for heavy packages shipped from Los Angeles?",
+      "expected_source_document": "carrier-coverage",
+      "expected_chunk_index": 0,
+      "expected_section": "Carrier Coverage > United States carriers (Los Angeles)"
+    },
+    {
+      "id": "q09-carrier-choice",
+      "question": "Can an account manager choose which carrier a shipment goes with?",
+      "expected_source_document": "carrier-coverage",
+      "expected_chunk_index": 2,
+      "expected_section": "Carrier Coverage > Carrier selection and exceptions"
+    },
+    {
+      "id": "q10-storage-rate",
+      "question": "How much do you charge per cubic meter per month for storage in Zaragoza, and is there a free period?",
+      "expected_source_document": "storage-pricing",
+      "expected_chunk_index": 0,
+      "expected_section": "Storage Pricing > Standard storage rates and long-term fee"
+    },
+    {
+      "id": "q11-storage-discount",
+      "question": "A client with a large volume is asking for a storage discount. Can I offer one?",
+      "expected_source_document": "storage-pricing",
+      "expected_chunk_index": 2,
+      "expected_section": "Storage Pricing > Preferential rates (Miguel Torres approval)"
+    },
+    {
+      "id": "q12-aging-report",
+      "question": "Can the client get an inventory aging report on their own?",
+      "expected_source_document": "storage-pricing",
+      "expected_chunk_index": 1,
+      "expected_section": "Storage Pricing > Inventory aging report"
+    }
+  ],
+  "off_topic": [
+    "What is the weather forecast for Zaragoza tomorrow?",
+    "Who won the football match last night?",
+    "How do I reset my email password?",
+    "What is the capital of France?",
+    "Can you recommend a good pasta recipe?",
+    "Which programming language should I learn first?"
+  ]
+}
