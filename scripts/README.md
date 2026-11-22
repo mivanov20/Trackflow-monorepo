@@ -32,3 +32,18 @@ At the end it asks `Export results to CSV? [y / n]`; `y` writes `results.csv` (c
 **The file contains customer emails.** The script never prints, logs or exports an email or any other cell value: invalid records are reported by line number and rule, and unexpected errors are reported without details. Keep the real file out of git and out of AI tools; `data/raw/incidents-trackflow.csv` is git-ignored.
 
 The validation and the metrics are in `packages/shared/trackflow_shared/incident_analysis.py`, shared with the API endpoint `POST /api/incidents/analyze` (see `services/README.md`). `data/eval/incidents-synthetic.csv` is a synthetic file with the same distribution as the briefing's test file (100 rows, 95 valid, average 3.06) and fake emails, so you can try the script, the API and the page without the real data. To check the real file, run `python scripts/analyze.py data/raw/incidents-trackflow.csv` and compare the numbers with the briefing.
+
+## `nightly_export.py`: the nightly telemetry job
+
+Exports the previous UTC day of `telemetry_events` to `data/raw/telemetry_YYYY-MM-DD.csv` (a backup for audit and recovery, never the pipeline's input), runs the data pipeline (`python data/pipelines/pipeline.py`) as a subprocess and records the run in `job_runs`.
+
+```
+python scripts/nightly_export.py                          # yesterday, UTC
+TARGET_DATE=2026-11-20 python scripts/nightly_export.py   # any day up to today, without touching the code
+```
+
+Needs `DATABASE_URL`. Optional: `NIGHTLY_PIPELINE_COMMAND` replaces the pipeline command, `NIGHTLY_EXPORT_DIR` the folder of the CSV (default `data/raw`). Exit codes: 0 completed or skipped, 1 failed, 2 bad configuration.
+
+- **States and lock:** `pending -> processing -> completed | failed`, in `job_runs` (`services/job_runner.py`). The `processing` status is the lock; a second instance, or a day that already completed, is skipped with one INFO line.
+- **Trigger:** `scripts/nightly_export.crontab`, `0 1 * * *` in UTC, installed with `crontab scripts/nightly_export.crontab`. On Windows, a Task Scheduler task running the same command does the same.
+- **Not in the API:** the script is its own process and imports no FastAPI code.

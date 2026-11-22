@@ -1,0 +1,18 @@
+# Trigger of the nightly telemetry job (ticket DEV-53). Install with:  crontab scripts/nightly_export.crontab
+# (adjust the two paths first). See scripts/README.md for the decision and how to run it by hand.
+#
+#   minute hour day-of-month month day-of-week   command
+#   0      1    *            *     *             nightly export at 01:00 UTC, every day
+#
+# CRON_TZ makes the schedule UTC whatever the server's time zone is, matching "yesterday" in the script (UTC).
+# The job needs DATABASE_URL, which cron does not have: it is read from a file only the job's user can read, never
+# from this file and never from the repository (mode 600, e.g. /etc/trackflow/nightly.env containing
+# `export DATABASE_URL=postgresql+psycopg://...`).
+#
+# No lock is taken here (no flock): the script's own `processing` status is the lock, so a run that fires while the previous
+# one is still going aborts silently, and a day that already completed is skipped.
+
+CRON_TZ=UTC
+SHELL=/bin/sh
+
+0 1 * * * . /etc/trackflow/nightly.env && cd /opt/trackflow && /opt/trackflow/services/.venv/bin/python scripts/nightly_export.py >> /var/log/trackflow/nightly_export.log 2>&1

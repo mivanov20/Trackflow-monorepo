@@ -1,9 +1,9 @@
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import DDL, CheckConstraint, Column, DateTime, Index, JSON, Numeric, Text, Uuid, event, text
+from sqlalchemy import DDL, CheckConstraint, Column, Date, DateTime, Index, JSON, Numeric, Text, Uuid, event, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 from trackflow_shared.incidents import BRANCHES, CATEGORIES, ORIGINS, STATUSES
@@ -139,3 +139,36 @@ $$""",
     "ALTER TABLE telemetry_events ENABLE ROW LEVEL SECURITY",
 ):
     event.listen(_TELEMETRY_TABLE, "after_create", DDL(_statement.replace("%", "%%")).execute_if(dialect="postgresql"))
+
+
+JOB_STATUSES = ("pending", "processing", "completed", "failed")
+
+
+class JobRun(SQLModel, table=True):
+    """One execution of a background job (the nightly telemetry script), with its state machine.
+
+    pending -> processing -> completed | failed. The `processing` status is the lock: the partial unique index below makes
+    the check-and-set atomic, so two instances can never both be processing the same job. This table is the nightly
+    orchestration layer; `reporting.pipeline_runs` (the ETL layer, Milestone 6) is a different table with a different job.
+    """
+
+    __tablename__ = "job_runs"
+    __table_args__ = (
+        CheckConstraint("status IN ('pending', 'processing', 'completed', 'failed')", name="ck_job_runs_status"),
+        # Idempotency checks ("did this job complete for this day?") read this pair.
+        Index("ix_job_runs_job_name_target_date", "job_name", "target_date"),
+        # At most one `processing` row per job: the status itself is the lock, and the database makes taking it atomic.
+        Index("one_processing_run_per_job", "job_name", unique=True, postgresql_where=text("status = 'processing'"), sqlite_where=text("status = 'processing'")),
+    )
+
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4,
+        sa_column=Column(Uuid, primary_key=True, server_default=text("gen_random_uuid()") if _POSTGRES else None),
+    )
+    job_name: str = Field(sa_column=Column(Text, nullable=False))
+    target_date: date = Field(sa_column=Column(Date, nullable=False))
+    status: str = Field(default="pending", sa_column=Column(Text, nullable=False, server_default=text("'pending'")))
+    started_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    finished_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    error_message: str | None = Field(default=None, sa_column=Column(Text, nullable=True))
+    created_at: datetime = Field(default_factory=utc_now, sa_column=Column(DateTime(timezone=True), nullable=False))
