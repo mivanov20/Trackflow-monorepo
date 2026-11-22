@@ -27,6 +27,9 @@ COPY --from=shared trackflow_shared /app/packages/shared/trackflow_shared
 # `data` no necesita __init__.py: Python lo trata como paquete de espacio de nombres.
 COPY --from=pipelines . /app/data/pipelines
 
+# Preparación e indexación de la base de conocimiento (RAG): `data.pipelines.rag` importa `data.process` (contexto adicional `process`).
+COPY --from=process . /app/data/process
+
 # Dependencias: esta capa se reutiliza mientras no cambie requirements.txt.
 COPY requirements.txt /app/requirements.txt
 RUN uv pip install --system -r requirements.txt

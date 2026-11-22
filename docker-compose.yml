@@ -19,6 +19,8 @@ x-api-build: &api-build
     shared: ./packages/shared
     # Pipelines de datos: services/reporting importa `data.pipelines` (no hay lógica de pipeline en services/).
     pipelines: ./data/pipelines
+    # Preparación e indexación de la base de conocimiento (RAG): `data.pipelines.rag` importa `data.process`.
+    process: ./data/process
 
 name: trackflow
 
@@ -94,12 +96,23 @@ services:
       ANALYSIS_MAX_UPLOAD_MB: ${ANALYSIS_MAX_UPLOAD_MB:-250}
       # La API solo ENCOLA tareas en Redis (responde 202); el worker las ejecuta.
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      # Base de conocimiento (POST /knowledge/query): Qdrant guarda los vectores; dos modelos distintos, uno para
+      # vectores (EMBEDDING_MODEL) y otro para redactar la respuesta (LLM_MODEL), por una API compatible con OpenAI.
+      QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+      LLM_API_URL: ${LLM_API_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      RAG_MIN_SCORE: ${RAG_MIN_SCORE:-0.35}
       # Recarga fiable sobre carpetas montadas desde Windows y macOS.
       WATCHFILES_FORCE_POLLING: "true"
     volumes:
       - ./services:/app/services
       - ./packages/shared:/app/packages/shared
       - ./data/pipelines:/app/data/pipelines
+      - ./data/process:/app/data/process
+      # Documentos que `setup()` indexa (solo lectura).
+      - ./docs/company-knowledge-base:/app/docs/company-knowledge-base:ro
       - api-data:/data
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
@@ -130,6 +143,15 @@ services:
 
   # Worker de Celery: un PROCESO APARTE de la API (misma imagen, otro comando). Parar la API no lo para, y los mensajes
   # esperan en Redis aunque el worker esté caído. Una tarea a la vez: el pipeline usa un servidor temporal de Prefect.
+  qdrant:
+    image: qdrant/qdrant:v1.20.0
+    ports:
+      - "${QDRANT_HOST_PORT:-6333}:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks:
+      - trackflow-net
+
   worker:
     build: *api-build
     image: trackflow-api:dev
@@ -179,6 +201,7 @@ networks:
 volumes:
   api-data:
   redis-data:
+  qdrant-data:
   ui-website-node-modules:
   ui-website-next:
   ui-backoffice-node-modules:

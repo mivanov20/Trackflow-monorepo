@@ -13,6 +13,7 @@ from .database import SERVICE_UNAVAILABLE_MESSAGE, create_db_and_tables, engine,
 from .routers.incident_analysis import router as incident_analysis_router, validate_analysis_config
 from .routers.incidents import router as incidents_router
 from .routers.inventory import router as inventory_router
+from .routers.knowledge import router as knowledge_router
 from .routers.profiles import router as profiles_router
 from .reporting.router import router as reporting_router
 from .routers.tasks import router as tasks_router
@@ -93,6 +94,7 @@ app.include_router(incident_analysis_router)
 app.include_router(telemetry_router)
 app.include_router(reporting_router)
 app.include_router(tasks_router)
+app.include_router(knowledge_router)
 
 
 @app.get("/health", tags=["health"])
