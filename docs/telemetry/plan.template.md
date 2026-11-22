@@ -6,6 +6,13 @@ Version {{SCHEMA_VERSION}} · {{EVENT_COUNT}} events · companion file: [`event-
 
 This is a design document. It describes what TrackFlow should measure, why, and exactly how each event looks. It contains no instrumentation code. Another developer should be able to instrument every event from this document and the JSON file alone.
 
+### Where to start if you are going to instrument
+
+1. Read section 4.2 (the envelope) and section 9 (transport).
+2. Use the **instrumentation quick reference** in section 3.6: one row per event with the file and function, the exact moment, and the delivery mode.
+3. For the property list, the source of each value and an example, open the event in section 4.5.
+4. Check section 10 first for the events that depend on a missing feature.
+
 ## 1. Purpose and scope
 
 TrackFlow replaces two separate warehouse systems with one inventory platform. Telemetry is how the company will learn whether the platform works, and whether the business behind it is healthy, without waiting for the Sunday-evening spreadsheet.
@@ -51,7 +58,7 @@ The catalogue is not theoretical. The API and the backoffice were read, and the 
 | Stock is computed per row in the list endpoints, which runs several queries per row returned. | `query_slow_detected` carries a per-request query counter to expose the pattern. |
 | There is no request id and no mapping from a user to a warehouse. | The envelope adds `requestId` (created by a middleware). Until the user's warehouse is stored, the warehouse of the product is the proxy for "where it happens". |
 
-These are prerequisites, listed again in section 9. They are not hidden: an event that cannot fire today is marked as such in its notes.
+These are prerequisites, specified in section 10. They are not hidden: an event that cannot fire today is marked as such in its notes.
 
 ## 3. Phase 1: the catalogue of data opportunities
 
@@ -79,6 +86,12 @@ Coverage is deliberately broad: the inventory flow (the business core), authenti
 The inventory flow has ten places worth instrumenting. Several are not the happy path, because the failures carry the most information: rejected direct stock edits, failed validations, threshold activations and integrity violations.
 
 {{INVENTORY_POINTS}}
+
+### 3.6 Instrumentation quick reference
+
+One row per event. "Ready" says whether it can be instrumented today or waits for a prerequisite from section 10.
+
+{{QUICKREF}}
 
 ## 4. Phase 2: the event contract
 
@@ -220,20 +233,70 @@ Sanitisation is enforced by the producer, not left to analysts. The producer bui
 | Analysts treat telemetry as the source of truth | Wrong business numbers | Inventory truth stays in the database. Telemetry explains behaviour and trends. |
 | Cost of streaming | Spending on events nobody acts on within the hour | Only events with an urgent decision stream, and the list is reviewed every quarter. |
 
-## 9. Prerequisites to make the plan implementable
+## 9. Transport: how events travel from producer to store
 
-These are gaps in the application that this plan depends on. They are not part of this deliverable, which is design only.
+This section fixes the contract between producers (API, browser) and the collector, so the two sides can be built independently. It specifies behaviour, not a product.
 
-1. A configurable minimum stock per client and SKU (for `stock_threshold_triggered`).
-2. A stock-count or audit flow that reconciles through adjustment orders (for `inventory_discrepancy_detected`).
-3. Reject stock fields in product payloads with 400 instead of dropping them silently (for `direct_stock_edit_rejected`).
-4. Validate the order warehouse against the SKU's warehouse (the integrity rule behind `stock_integrity_violation_detected`).
-5. A `client_id` on SKU, and a warehouse on the user, replacing the slug and the product warehouse proxy.
-6. A request middleware that assigns and propagates `X-Request-ID`.
-7. A `TELEMETRY_PEPPER` secret, supplied by the environment.
-8. A collector endpoint and a queue, with a place to store events. The plan fixes the contract, not the product.
+### 9.1 Producer rules (both API and browser)
 
-## 10. Maintaining this document
+1. Build the event from the allowlist of its `event_type`; never serialise a whole object.
+2. Fill the envelope: `eventId` (new UUID v4), `timestamp` (producer clock, UTC, `Z`), `schemaVersion`, `requestId`, and `sessionId` and `userId` when known.
+3. Validate against `event-schemas.json`. On failure, drop the event and increment a local counter `telemetry_dropped_total{reason="invalid"}`. Never raise.
+4. Hand the event to a buffer and return immediately. Telemetry must add no more than 1 ms to a request and never run inside a database transaction.
+5. For business events, emit only after the commit succeeded.
+
+### 9.2 Collector endpoint
+
+| Item | Contract |
+|---|---|
+| Route | `POST /telemetry/events` on the API. A separate path from business routes so it can be rate-limited and switched off on its own. |
+| Body | `{"events": [<envelope>, ...]}`, JSON, at most 100 events and 256 KB per request. |
+| Authentication | Browser: the user's normal bearer token (events carry the real `userId`; the collector overwrites `userId` with the token's subject, so a client cannot impersonate another user). Before sign-in (failed login, login page views): no token, `userId` is `null`, and the route accepts only the events marked `frontend` that are allowed anonymously (`page_viewed`, `frontend_error_caught`, `network_request_failed`, `page_load_recorded`, `flow_started`, `flow_abandoned`, `form_validation_failed`), with a stricter rate limit. Backend events do not use HTTP: the API writes them directly to the queue in-process. |
+| CORS | Same origin as the backoffice (the existing `/backend` proxy), so no cross-origin allowance is added. |
+| Rate limit | 60 requests per minute per user, 20 per minute per network for anonymous calls. Over the limit: `429` with `Retry-After`; the producer keeps events in its buffer. |
+| Validation | Each event is validated against its schema. The collector replies `202` with `{"accepted": n, "rejected": [{"eventId": "...", "reason": "..."}]}`. A rejected event is never retried (it would fail again); an accepted duplicate `eventId` is dropped silently. |
+| Server-set fields | The collector adds `receivedAt` (arrival time) outside the envelope in storage. It flags any event whose `timestamp` differs from `receivedAt` by more than 5 minutes. |
+| Failures | `5xx` and network errors are retried by the producer; `4xx` other than `429` are not. |
+
+### 9.3 Browser producer
+
+- **Buffer:** in memory, flushed every 10 s, when it reaches 20 events, and on `visibilitychange` to hidden using `navigator.sendBeacon` (which cannot carry an `Authorization` header, so the beacon path uses a short-lived telemetry token issued at sign-in).
+- **Streamed events** (`frontend_error_caught`) are flushed immediately instead of waiting for the timer.
+- **Offline:** keep at most 200 events (oldest dropped first) and retry with exponential backoff, starting at 2 s and capped at 5 minutes, with jitter.
+- **`requestId`:** created per user action in the browser and sent as the `X-Request-ID` header on the API call it triggers, so frontend and backend events of one action join.
+- **`sessionId`:** created at sign-in, kept in memory (not in `localStorage`), discarded at sign-out or when the tab closes.
+- **Opt-out:** if `navigator.doNotTrack` is `1`, only the events required for security and reliability (`login_failed` is server-side anyway, `frontend_error_caught`, `network_request_failed`) are sent.
+
+### 9.4 Backend producer
+
+- A middleware assigns `requestId` (reuses a valid `X-Request-ID`, otherwise creates one), stores it in request context and returns it in the `X-Request-ID` response header.
+- Events are pushed to an in-process queue after the commit. A worker flushes them: **stream** events within 5 s, **batch** events every 60 s or 500 events, whichever comes first. The delivery label of each event in section 6 is the target for the analytics store, not for this local flush.
+- If the queue is full (10,000 events), drop `api_latency_recorded` first, then other `batch` events; never drop a mandatory metric or a `stream` security event.
+
+### 9.5 Storage and retention
+
+- **Hot store (stream):** queryable within 60 s, 7 days of retention, used for alerts and the live operations view.
+- **Warehouse (batch and stream):** one table per `event_type` (the allowlist makes columns known), partitioned by day. Retention: business events for the life of the reporting need, security events containing hashes 30 days, performance and error events 90 days.
+- **Access:** the security dataset (`login_failed`, `password_reset_requested`, `access_denied`, `user_role_changed`) is readable only by engineering. Dashboards read the other tables.
+
+## 10. Prerequisites to make the plan implementable
+
+These are gaps in the application that the plan depends on. Each one is specified here precisely enough to be built, because three of the five mandatory metrics cannot fire without them. The gaps themselves are outside this design-only deliverable.
+
+| # | Prerequisite | Required behaviour | Unlocks |
+|---|---|---|---|
+| 1 | Minimum stock per client and SKU | New column `SKU.min_stock` (integer, default 0, set at product creation and changed only by an admin or manager through `PATCH /inventory/products/{id}/min-stock`). The comparison runs after every outbound commit using stock before and after. 0 means the rule is off for that SKU. | `stock_threshold_triggered` |
+| 2 | Stock-count flow | New `StockCount` record: `count_id`, `warehouse`, `product`, `counted_quantity`, `system_quantity` (frozen when the count is saved), `detection_source`, `counted_by`. When `counted_quantity` differs, create an adjustment inbound (surplus) or outbound of type `loss` (shortage) that references `count_id`, so stock still changes only through an order. | `inventory_discrepancy_detected` |
+| 3 | Reject stock fields in payloads | `POST /inventory/products` and any inventory body containing `current_stock`, `stock` or `quantity_on_hand` answers `400` with `{"error": "stock_is_read_only"}`. The 405 on `PUT`, `PATCH` and `DELETE` of product routes stays. | `direct_stock_edit_rejected` (channel `stock_field_in_payload`) |
+| 4 | Warehouse consistency check | An order whose `warehouse` differs from its SKU's warehouse answers `400` with `{"error": "warehouse_mismatch"}`. A periodic scan also reports negative stock and orphan movements. | `stock_integrity_violation_detected` |
+| 5 | Client id and user warehouse | `SKU.client_id` (foreign key to a clients table; until then the slug of `client_name`), and `User.warehouse` (nullable). When `User.warehouse` exists, `direct_stock_edit_rejected.warehouse` uses the user's warehouse instead of the product's. | All inventory events, `client_id` quality |
+| 6 | Request middleware | Assigns and propagates `X-Request-ID` as in section 9.4. | `requestId` in every event |
+| 7 | `TELEMETRY_PEPPER` | A random secret of at least 32 bytes, read from the environment, listed in `.env.example` without a value, never committed. | `email_hash`, `source_network_hash` |
+| 8 | Collector, queue and store | As specified in section 9. | Everything |
+
+Until prerequisites 1, 2 and 5 exist, the events they unlock are defined but cannot fire. Every other event can be instrumented today.
+
+## 11. Maintaining this document
 
 `telemetry-plan.md` and `event-schemas.json` are generated from one source, `events.py`, so they cannot disagree. After changing an event:
 
