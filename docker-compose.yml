@@ -136,6 +136,8 @@ services:
     init: true
     command: ["celery", "-A", "services.celery_app", "worker", "--loglevel=INFO", "--concurrency=1", "--hostname=worker@%h"]
     environment:
+      # El script `celery` no pone /app en sys.path (uvicorn sí): sin esto el worker no encuentra `data.pipelines`.
+      PYTHONPATH: /app
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       DATABASE_URL: ${DATABASE_URL:-sqlite:////data/trackflow-dev.db}
       TASK_RETRY_BACKOFF_SECONDS: ${TASK_RETRY_BACKOFF_SECONDS:-5}
