@@ -103,7 +103,10 @@ export async function apiRequest<T>(
   options: {
     method?: "GET" | "POST" | "PUT" | "PATCH";
     token?: string | null;
+    /** JSON-serializable data, or a FormData (sent as multipart, e.g. a file upload). */
     body?: unknown;
+    /** How to read a successful response: parsed JSON (default) or the raw text (e.g. a CSV download). */
+    as?: "json" | "text";
     /** Abort the request after this many milliseconds (no timeout by default). */
     timeoutMs?: number;
     /** Name used in user-facing messages, for example "inventory" or "incident". */
@@ -112,7 +115,9 @@ export async function apiRequest<T>(
 ): Promise<T> {
   const serviceName = options.serviceName ?? "inventory";
   const headers = new Headers({ Accept: "application/json" });
-  if (options.body !== undefined) headers.set("Content-Type", "application/json");
+  const isForm = typeof FormData !== "undefined" && options.body instanceof FormData;
+  // Con FormData el navegador pone el Content-Type multipart con su boundary: no hay que fijarlo.
+  if (options.body !== undefined && !isForm) headers.set("Content-Type", "application/json");
   if (options.token) headers.set("Authorization", `Bearer ${options.token}`);
 
   const controller = new AbortController();
@@ -123,7 +128,7 @@ export async function apiRequest<T>(
     response = await fetch(`${API_BASE_URL}${path}`, {
       method: options.method ?? "GET",
       headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body: options.body === undefined ? undefined : isForm ? (options.body as FormData) : JSON.stringify(options.body),
       signal: controller.signal,
     });
   } catch (caught) {
@@ -135,7 +140,14 @@ export async function apiRequest<T>(
     if (timer) clearTimeout(timer);
   }
 
-  const responseBody: unknown = await response.json().catch(() => null);
+  const rawBody = await response.text().catch(() => "");
+  let parsedBody: unknown = null;
+  try {
+    parsedBody = rawBody ? JSON.parse(rawBody) : null;
+  } catch {
+    parsedBody = null; // no es JSON (por ejemplo un CSV o una página de error de un proxy)
+  }
+  const responseBody = parsedBody;
   if (!response.ok) {
     if (response.status === 401 && options.token && typeof window !== "undefined") {
       // Token caducado o inválido en una llamada protegida: se borra la sesión y se vuelve a /login.
@@ -144,6 +156,7 @@ export async function apiRequest<T>(
     }
     throw new ApiError(errorMessage(responseBody, response.status), response.status, fieldErrorsFrom(responseBody));
   }
+  if (options.as === "text") return rawBody as T;
   if (responseBody === null && response.status !== 204) {
     // Una respuesta 2xx que no es JSON (proxy, página HTML) no debe llegar a la UI como datos.
     throw new ApiError(GENERIC_ERROR_MESSAGE, response.status);

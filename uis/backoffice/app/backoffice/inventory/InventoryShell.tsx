@@ -36,6 +36,7 @@ export function InventoryShell({ children }: { children: ReactNode }) {
         <nav aria-label="Incidents" className="incident-nav">
           <Link href="/backoffice/incidents">Incidents</Link>
           <Link href="/backoffice/incidents/new">Report incident</Link>
+          <Link href="/backoffice/incidents/analyze">Analyze file</Link>
         </nav>
         <nav aria-label="Account" className="incident-nav">
           <Link href="/account/profile">My account</Link>
