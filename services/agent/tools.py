@@ -53,7 +53,7 @@ class StockLookupInput(BaseModel):
     product_query: str = Field(min_length=2, max_length=120)
 
 
-ToolStatus = Literal["ok", "not_found", "timeout", "unavailable"]
+ToolStatus = Literal["ok", "not_found", "timeout", "unavailable", "forbidden"]
 
 
 class ToolResult(BaseModel):
@@ -66,6 +66,14 @@ class ToolResult(BaseModel):
     data: Any | None = None
     message: str = ""
     summary: dict[str, Any] = Field(default_factory=dict)  # what the trace keeps: no free text of the ticket
+
+
+FORBIDDEN_MESSAGE = "Ticket and stock data are internal to the TrackFlow team and are not available to customer accounts."
+
+
+def forbidden(tool: str, input_: dict) -> "ToolResult":
+    """What a tool returns when the caller is not allowed to use it. The tool is NOT called, so no internal record is read at all."""
+    return ToolResult(tool=tool, status="forbidden", input=input_, message=FORBIDDEN_MESSAGE)
 
 
 class ToolTimeout(Exception):
@@ -175,6 +183,8 @@ def live_chunks(results: list[dict]) -> list[dict]:
     chunks = []
     for index, raw in enumerate(results):
         result = ToolResult.model_validate(raw)
+        if result.status == "forbidden":
+            continue  # nothing was read: the model gets no block about it and the refusal is a fixed message
         is_ticket = result.tool == "ticket_lookup"
         source = TICKET_SOURCE if is_ticket else STOCK_SOURCE
         label = f"Ticket {result.input['ticket_id']} (live)" if is_ticket else f"Stock of '{result.input['product_query']}' (live)"
@@ -189,8 +199,13 @@ def live_chunks(results: list[dict]) -> list[dict]:
 def fallback_message(results: list[dict]) -> str:
     """The honest answer when every live lookup failed and there is nothing else to answer from. Never a status or a number."""
     parts = []
+    if results and all(ToolResult.model_validate(raw).status == "forbidden" for raw in results):
+        return ("I can't share ticket or stock information from this account: that data is internal to the TrackFlow team. "
+                "For one of your own orders, give me its tracking number and I will check it. A TrackFlow colleague can help with anything else.")
     for raw in results:
         result = ToolResult.model_validate(raw)
+        if result.status == "forbidden":
+            continue
         if result.tool == "ticket_lookup":
             number = result.input["ticket_id"]
             parts.append(f"I couldn't find a ticket {number} in the incident manager. Please check the number." if result.status == "not_found" else f"I couldn't confirm ticket {number}'s status right now: the incident manager didn't respond.")

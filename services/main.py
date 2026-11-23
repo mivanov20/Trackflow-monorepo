@@ -28,6 +28,7 @@ from .routers.users import router as users_router
 from .agent import validate_agent
 from .mailer import validate_email_config
 from .security import validate_security_config
+from . import hardening
 from data.pipelines.weekly_performance.schema import ensure_reporting
 from data.pipelines.rfp_intake import notifications as rfp_notifications, proposal_store as rfp_proposal_store, store as rfp_store
 from sqlmodel import Session
@@ -69,7 +70,8 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="TrackFlow Inventory API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="TrackFlow Inventory API", version="1.0.0", lifespan=lifespan, **hardening.docs_urls())
+app.middleware("http")(hardening.security_headers_middleware)
 
 
 @app.exception_handler(AccountStoreError)

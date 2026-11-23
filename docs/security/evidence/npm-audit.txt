@@ -1,0 +1,15 @@
+OWASP A06 (vulnerable components) - npm audit of the production dependency tree (root package-lock.json, which pins what the apps resolve)
+
+$ npm audit --omit=dev            # BEFORE (next 15.5.25 locked)
+4 vulnerabilities (3 high, 1 critical)
+  next        critical  unauthenticated RCE in the Image Optimization API (SVG), SSG/ISR cache poisoning, cross-client response injection ... (GHSA-2464-fhr4-w9xw, GHSA-4jqv-mc3x-m676 ...)
+  postcss     high      (via next)      sharp  high  (librsvg)      source-map-js  high  (event-loop DoS)
+
+$ npm audit fix --package-lock-only   # next 15.5.25 -> 15.5.29 (patch, inside ^15), sharp 0.35.5, source-map-js 1.2.4
+$ npm audit --omit=dev            # AFTER
+2 vulnerabilities (1 moderate, 1 high)
+  next (moderate) and postcss (high, "<=8.5.22", bundled by Next): fixed only by Next 16 (a MAJOR upgrade, `npm audit fix --force`). Not critical; accepted and tracked (see owasp-audit.md, A06).
+  Critical: 0
+
+Also: the `next` floor in package.json, uis/backoffice/package.json and uis/website/package.json is now ^15.5.29, because the Docker image runs `npm install` with no lockfile and would
+otherwise accept any ^15.5.2 (including the vulnerable range) from a cache.

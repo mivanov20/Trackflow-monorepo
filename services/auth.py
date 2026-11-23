@@ -35,6 +35,7 @@ from .accounts import (
     register_reset_request,
     update_user,
 )
+from . import hardening
 from .mailer import build_reset_email, reset_link, send_email
 from .security import (
     InvalidTokenError,
@@ -114,6 +115,19 @@ def _session_response(user: User) -> TokenResponse:
     )
 
 
+def throttled_authenticate(request: Request, email: str, password: str) -> User:
+    """`authenticate` behind the sign-in throttle: a client that keeps failing is stopped before the password is even checked."""
+    hardening.check_login_allowed(request, email)
+    try:
+        user = authenticate(email, password)
+    except HTTPException as error:
+        if error.status_code == status.HTTP_401_UNAUTHORIZED:
+            hardening.record_login_failure(request, email)
+        raise
+    hardening.record_login_success(request, email)
+    return user
+
+
 def authenticate(email: str, password: str) -> User:
     """Valida credenciales. Mismo error y tiempo de respuesta si el email no existe o la clave falla."""
     user = get_user_by_email(email)
@@ -131,9 +145,9 @@ def authenticate(email: str, password: str) -> User:
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest) -> TokenResponse:
-    """Valida email y contraseña y devuelve un JWT firmado."""
-    return _session_response(authenticate(payload.email, payload.password))
+def login(payload: LoginRequest, request: Request) -> TokenResponse:
+    """Valida email y contraseña y devuelve un JWT firmado. Tras demasiados fallos seguidos responde 429 (services/hardening.py)."""
+    return _session_response(throttled_authenticate(request, payload.email, payload.password))
 
 
 @router.get("/me", response_model=UserWithProfile)
@@ -158,7 +172,7 @@ async def login_for_swagger(request: Request) -> dict[str, str]:
     username, password = (form.get("username") or [""])[0], (form.get("password") or [""])[0]
     if not username or not password:
         raise HTTPException(status_code=422, detail="Email and password are required.")
-    user = await run_in_threadpool(authenticate, username, password)  # bcrypt y TinyDB son bloqueantes
+    user = await run_in_threadpool(throttled_authenticate, request, username, password)  # bcrypt y TinyDB son bloqueantes
     return {"access_token": create_access_token(user.id), "token_type": "bearer"}
 
 

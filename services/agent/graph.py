@@ -77,6 +77,7 @@ class AgentState(TypedDict, total=False):
     question: str
     plan: dict
     live_data: list[dict]
+    tools_allowed: bool  # False for a customer session: the live tools (internal tickets, all-client stock) are refused for it. Absent = internal call, no session
     context: list[dict]
     answer: str
     outcome: str
@@ -116,13 +117,19 @@ def ask_clarification(state: AgentState) -> dict:
 
 def lookup_ticket(state: AgentState) -> dict:
     """Reads one ticket from the incident manager (read-only, with a timeout). A failure is a result, not an exception."""
-    result = tools.lookup_ticket(state["plan"]["ticket_id"])
+    if state.get("tools_allowed") is False:  # a customer account: internal tickets are not theirs to read (OWASP A01, the agent must not use a tool its caller may not)
+        result = tools.forbidden("ticket_lookup", {"ticket_id": state["plan"]["ticket_id"]})
+    else:
+        result = tools.lookup_ticket(state["plan"]["ticket_id"])
     return {"live_data": [*(state.get("live_data") or []), result.model_dump(mode="json")]}
 
 
 def lookup_stock(state: AgentState) -> dict:
     """Reads the stock of a product from the inventory manager (read-only, with a timeout)."""
-    result = tools.lookup_stock(state["plan"]["stock_query"])
+    if state.get("tools_allowed") is False:  # stock rows carry every B2B client's name and volumes
+        result = tools.forbidden("stock_lookup", {"product_query": state["plan"]["stock_query"]})
+    else:
+        result = tools.lookup_stock(state["plan"]["stock_query"])
     return {"live_data": [*(state.get("live_data") or []), result.model_dump(mode="json")]}
 
 

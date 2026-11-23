@@ -58,3 +58,13 @@ NEW_INCIDENT = {
     "origin": "customer",
     "branch": "central",
 }
+
+
+@pytest.fixture(autouse=True)
+def _fresh_login_throttle():
+    """The sign-in throttle is process-wide state: every test starts with no recorded failures."""
+    from services import hardening
+
+    hardening.reset_login_throttle()
+    yield
+    hardening.reset_login_throttle()

@@ -134,6 +134,8 @@ def run_agent(question: str, *, graph=None, engine: Engine | None = None, run_id
         _guard_step(engine, run_id, "input_guard", question, {"guard": pre.guard, "failure_type": pre.failure_type, "action": "blocked", "outcome": pre.outcome}, first_step=1)
         return AgentResult(run_id=run_id, answer=post.answer, outcome=post.outcome or pre.outcome, conversation_id=conversation_id, guardrail=pre.summary)
     state: dict = {"question": question}
+    if session is not None:
+        state["tools_allowed"] = session.is_staff  # least privilege: the agent acts with the permissions of whoever asks, never more
     if conversation_id:
         state.update({"conversation_id": conversation_id, "actor": actor or ""})
     if pre is not None:

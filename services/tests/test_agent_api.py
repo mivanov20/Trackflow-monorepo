@@ -131,6 +131,10 @@ def ticket(monkeypatch):
         raise mcp_client.McpError("NOT_FOUND", "not found")
 
     monkeypatch.setattr(mcp_client, "call_tool", call_tool)
+    # The live tools are for TrackFlow staff (audit finding C-01: a customer account is refused them; tests/test_security_audit.py proves it), so these tests ask as a manager.
+    app.dependency_overrides[get_current_user] = lambda: User(id="mgr-1", email="mgr@example.com", hashed_password="x", role=Role.manager, created_at="2026-01-01T00:00:00Z")
+    yield
+    app.dependency_overrides.pop(get_current_user, None)
 
 
 def test_a_ticket_question_is_answered_from_the_incident_manager_and_reports_its_source(incident_client, pipeline, ticket, monkeypatch):

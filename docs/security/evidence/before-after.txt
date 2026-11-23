@@ -1,0 +1,13 @@
+BEFORE  base origin/main (32a4e53): exploit tests that FAIL = the vulnerability exists
+  FAIL  services/tests/test_security_audit.py::test_a_customer_cannot_make_the_agent_read_an_internal_ticket
+  FAIL  services/tests/test_security_audit.py::test_a_customer_cannot_see_another_brands_stock_through_the_agent
+  FAIL  services/tests/test_security_audit.py::test_responses_carry_security_headers_and_auth_is_never_cached
+  FAIL  services/tests/test_security_audit.py::test_sign_in_is_throttled_after_repeated_failures
+  FAIL  services/tests/test_security_audit.py::test_the_api_documentation_is_not_published_in_production
+  FAIL  tests/infra/test_hardening.py
+  -> 6 failed, 5 passed
+
+AFTER   this working tree (the fixes applied)
+  -> 0 failed, 22 passed
+
+RESULT  exploits reproduce on base and are closed on this tree
