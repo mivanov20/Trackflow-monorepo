@@ -30,11 +30,11 @@ from data.pipelines.rfp_intake import approval_runner, approval_store, proposal_
 from data.pipelines.rfp_intake.config import MAX_UPLOAD_BYTES, raw_dir, relative_to_root
 
 from ..accounts import Role, User
-from ..auth import get_current_user
+from ..auth import get_current_user, require_staff
 from ..database import get_session
 
 logger = logging.getLogger("trackflow.rfp")
-router = APIRouter(prefix="/rfp", tags=["rfp"])
+router = APIRouter(prefix="/rfp", tags=["rfp"], dependencies=[Depends(require_staff)])
 
 PDF_MAGIC = b"%PDF-"
 

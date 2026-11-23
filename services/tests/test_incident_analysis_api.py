@@ -215,6 +215,9 @@ def test_a_failed_upload_keeps_the_previous_analysis(incident_client):
 def test_each_user_exports_only_their_own_analysis(incident_client):
     upload(incident_client, sample_bytes())
     incident_client.post("/users", json={"email": "second@example.com", "password": "correct-horse-42"})
+    from services import accounts
+
+    accounts.update_user(accounts.get_user_by_email("second@example.com").id, role=accounts.Role.manager)  # staff, like the first user
     token = incident_client.post("/auth/login", json={"email": "second@example.com", "password": "correct-horse-42"}).json()["access_token"]
     other = {"Authorization": f"Bearer {token}"}
     assert incident_client.get("/api/incidents/results/export", headers=other).status_code == 404

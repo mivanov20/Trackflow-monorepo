@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
-from jose import jwt
+import jwt
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -148,7 +148,7 @@ def test_token_expiry_comes_from_the_environment(api, monkeypatch):
     register(api)
     monkeypatch.setenv("ACCESS_TOKEN_EXPIRE_MINUTES", "5")
     body = api.post("/auth/login", json={"email": "alice@example.com", "password": PASSWORD}).json()
-    claims = jwt.get_unverified_claims(body["access_token"])
+    claims = jwt.decode(body["access_token"], options={"verify_signature": False})
     assert claims["exp"] - claims["iat"] == 300 and body["expires_in"] == 300
 
 
@@ -226,6 +226,7 @@ def test_public_routes_do_not_demand_a_token(api, method, path):
 
 def test_existing_routes_still_work_with_a_valid_token(api):
     register(api)
+    make_admin("alice@example.com")  # self-registration gives role `user`; the operational APIs are for staff
     headers = auth(api, "alice@example.com")
     assert api.get("/inventory/products", headers=headers).status_code == 200
     assert api.get("/inventory/orders", headers=headers).status_code == 200
@@ -390,7 +391,7 @@ def test_legacy_accounts_are_migrated_and_rehashed_on_first_login(api):
     )
     response = api.post("/auth/login", json={"email": "old@example.com", "password": PASSWORD})
     assert response.status_code == 200
-    assert jwt.get_unverified_claims(response.json()["access_token"])["sub"] == "legacy-id"  # inventario sigue enlazado
+    assert jwt.decode(response.json()["access_token"], options={"verify_signature": False})["sub"] == "legacy-id"  # inventario sigue enlazado
 
     stored = json.loads(api.store_path.read_text(encoding="utf-8"))
     assert stored.get("_default", {}) == {}

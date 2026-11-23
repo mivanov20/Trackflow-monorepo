@@ -1,0 +1,57 @@
+GET    /agent/guardrails/events                                    401  protected
+GET    /agent/guardrails/summary                                   401  protected
+GET    /agent/memory                                               401  protected
+GET    /agent/memory/audit                                         401  protected
+DELETE /agent/memory/{entry_id}                                    401  protected
+POST   /agent/query                                                401  protected
+GET    /agent/runs/{run_id}/trace                                  401  protected
+GET    /api/incidents                                              401  protected
+POST   /api/incidents                                              401  protected
+POST   /api/incidents/analyze                                      401  protected
+GET    /api/incidents/results/export                               401  protected
+GET    /api/incidents/summary                                      401  protected
+GET    /api/incidents/{incident_id}                                401  protected
+PATCH  /api/incidents/{incident_id}/status                         401  protected
+POST   /auth/change-password                                       401  protected
+POST   /auth/forgot-password                                       422  PUBLIC (expected: password recovery request)
+POST   /auth/login                                                 422  PUBLIC (expected: sign in)
+GET    /auth/me                                                    401  protected
+POST   /auth/register                                              422  PUBLIC (expected: self-registration (role user))
+POST   /auth/reset-password                                        422  PUBLIC (expected: password recovery with an emailed token)
+POST   /auth/token                                                 422  PUBLIC (expected: Swagger form login)
+GET    /chat/sessions                                              401  protected
+POST   /chat/sessions                                              401  protected
+GET    /chat/sessions/{session_id}                                 401  protected
+POST   /chat/sessions/{session_id}/close                           401  protected
+GET    /health                                                     200  PUBLIC (expected: liveness probe, returns no data)
+GET    /inventory/orders                                           401  protected
+POST   /inventory/orders/inbound                                   401  protected
+POST   /inventory/orders/outbound                                  401  protected
+GET    /inventory/products                                         401  protected
+POST   /inventory/products                                         401  protected
+GET    /inventory/products/{sku_id}                                401  protected
+POST   /knowledge/query                                            401  protected
+GET    /profiles/me                                                401  protected
+PUT    /profiles/me                                                401  protected
+POST   /reporting/pipeline-runs                                    401  protected
+GET    /reporting/pipeline-runs/latest                             401  protected
+GET    /reporting/weekly-warehouse-client-performance              401  protected
+GET    /rfp/events                                                 401  protected
+GET    /rfp/tickets                                                401  protected
+POST   /rfp/tickets                                                401  protected
+GET    /rfp/tickets/{ticket_id}                                    401  protected
+POST   /rfp/tickets/{ticket_id}/approval                           401  protected
+GET    /rfp/tickets/{ticket_id}/document                           401  protected
+POST   /rfp/tickets/{ticket_id}/proposal                           401  protected
+POST   /rfp/tickets/{ticket_id}/sections/{department_id}/decision  401  protected
+GET    /rfp/tickets/{ticket_id}/trace                              401  protected
+GET    /tasks/{task_id}                                            401  protected
+POST   /telemetry/events                                           422  PUBLIC (expected: client telemetry, sent before sign-in too (login failures))
+GET    /telemetry/report                                           401  protected
+GET    /users                                                      401  protected
+POST   /users                                                      422  PUBLIC (expected: self-registration (role user))
+DELETE /users/{user_id}                                            401  protected
+GET    /users/{user_id}                                            401  protected
+PUT    /users/{user_id}                                            401  protected
+
+55 routes probed, 0 unexpected public route(s).

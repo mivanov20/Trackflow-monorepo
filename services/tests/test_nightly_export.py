@@ -287,7 +287,7 @@ def test_bad_configuration_exits_2_without_touching_the_database(workspace):
 def test_the_default_pipeline_is_the_milestone_6_entry_point_and_it_reads_the_database_not_the_csv():
     command = nightly.pipeline_command({})
     assert command[0] == sys.executable and Path(command[1]) == REPO_ROOT / "data" / "pipelines" / "pipeline.py" and Path(command[1]).is_file()
-    pipeline_source = "\n".join(p.read_text(encoding="utf-8") for p in (REPO_ROOT / "data" / "pipelines").rglob("*.py"))
+    pipeline_source = "\n".join(p.read_text(encoding="utf-8") for p in (REPO_ROOT / "data" / "pipelines").rglob("*.py") if "sales_forecasting" not in p.parts)  # the nightly pipeline only: the sales-forecasting pipeline (a later, separate project) reads its own sales CSV
     assert ".csv" not in pipeline_source.replace("results.csv", "") and "telemetry_20" not in pipeline_source  # the pipeline does not read the export
     assert nightly.pipeline_command({"NIGHTLY_PIPELINE_COMMAND": "echo hello world"}) == ["echo", "hello", "world"]
 

@@ -270,6 +270,9 @@ def test_a_user_turn_produces_the_named_events_in_order(chat):
 
 
 def test_the_agent_runs_as_the_signed_in_user(chat):
+    from services import accounts
+
+    accounts.update_user(chat.client.get("/auth/me").json()["id"], role=accounts.Role.user)  # the fixture's operative is staff; this test is about a plain account
     sid = chat.new_session()["session_id"]
     connection = chat.connect(sid)
     snapshot_of(connection)

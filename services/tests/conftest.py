@@ -45,6 +45,9 @@ def incident_client(incident_engine, tmp_path, monkeypatch):
         credentials = {"email": "operative@example.com", "password": "correct-horse-42"}
         registered = client.post("/auth/register", json={"name": "Test Operative", **credentials})
         assert registered.status_code == 201
+        from services import accounts
+
+        accounts.update_user(registered.json()["id"], role=accounts.Role.manager)  # self-registration gives role `user`; the operational APIs are for staff (audit H-03)
         token = client.post("/auth/login", json=credentials).json()["access_token"]
         client.headers.update({"Authorization": f"Bearer {token}"})
         yield client
@@ -58,3 +61,13 @@ NEW_INCIDENT = {
     "origin": "customer",
     "branch": "central",
 }
+
+
+@pytest.fixture(autouse=True)
+def _fresh_login_throttle():
+    """The sign-in throttle is process-wide state: every test starts with no recorded failures."""
+    from services import hardening
+
+    hardening.reset_login_throttle()
+    yield
+    hardening.reset_login_throttle()

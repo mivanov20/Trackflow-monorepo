@@ -174,7 +174,11 @@ def stack(tmp_path_factory):
 
     api_app.dependency_overrides[get_session] = session
     with TestClient(api_app) as api:  # registers the service account the MCP server signs in with, and seeds inventory
-        assert api.post("/auth/register", json={"name": "MCP Service", "email": SERVICE_EMAIL, "password": SERVICE_PASSWORD}).status_code == 201
+        registered = api.post("/auth/register", json={"name": "MCP Service", "email": SERVICE_EMAIL, "password": SERVICE_PASSWORD})
+        assert registered.status_code == 201
+        from services import accounts
+
+        accounts.update_user(registered.json()["id"], role=accounts.Role.manager)  # the incident and inventory APIs are for staff (audit H-03): so is the service account
         seed(api)
 
     idp_port, mcp_port = free_port(), free_port()

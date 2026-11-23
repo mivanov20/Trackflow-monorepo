@@ -146,6 +146,9 @@ def test_memory_can_be_forgotten_and_the_audit_record_stays(as_manager, scripted
 
 
 def test_only_admins_and_managers_can_read_or_change_the_memory(incident_client, scripted):
+    from services import accounts
+
+    accounts.update_user(incident_client.get("/auth/me").json()["id"], role=accounts.Role.user)  # the fixture's operative is staff; this test is about a plain account
     assert incident_client.get("/agent/memory").status_code == 403
     assert incident_client.get("/agent/memory/audit").status_code == 403
     assert incident_client.delete(f"/agent/memory/{uuid.uuid4()}").status_code == 403

@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
-from ..auth import get_current_user
+from ..auth import get_current_user, require_staff
 from ..database import SERVICE_UNAVAILABLE_MESSAGE, get_session
 from ..accounts import User
 from ..telemetry.report import InvalidPeriod, get_report
@@ -80,7 +80,7 @@ def telemetry_report(
     start_date: datetime | None = Query(default=None, description="ISO 8601, inclusive. Default: end_date minus 7 days."),
     end_date: datetime | None = Query(default=None, description="ISO 8601, exclusive. Default: now."),
     session: Session = Depends(get_session),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_staff),
 ) -> dict[str, Any]:
     """Operational report of the system (volume, errors, latency, availability, sign-in health) for a period.
 

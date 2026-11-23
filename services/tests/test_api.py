@@ -47,6 +47,9 @@ def auth_headers(client):
         json={"name": "Test Operative", "email": "operative@example.com", "password": "correct-horse-42"},
     )
     assert registered.status_code == 201
+    from services import accounts
+
+    accounts.update_user(registered.json()["id"], role=accounts.Role.manager)  # operational APIs are for staff (audit H-03)
     login = client.post(
         "/auth/login", json={"email": "operative@example.com", "password": "correct-horse-42"}
     )

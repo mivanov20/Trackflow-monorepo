@@ -83,6 +83,14 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
       AUTH_DB_PATH: ${AUTH_DB_PATH:-/data/users.json}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001}
+      # Endurecimiento (docs/security/server-hardening.md): production apaga /docs; TRUSTED_PROXY=true cuenta la IP real tras el proxy inverso.
+      APP_ENV: ${APP_ENV:-}
+      # Primer administrador (las cuentas que se registran solas son `user` y no usan las APIs operativas). Quita la contraseña del entorno tras el primer arranque.
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      TRUSTED_PROXY: ${TRUSTED_PROXY:-}
+      LOGIN_MAX_FAILURES: ${LOGIN_MAX_FAILURES:-5}
+      LOGIN_WINDOW_SECONDS: ${LOGIN_WINDOW_SECONDS:-900}
       # Dirección del receptor de telemetría (ruta de esta API o URL completa). Se valida al arrancar.
       TELEMETRY_ENDPOINT: ${TELEMETRY_ENDPOINT:-/telemetry/events}
       # Correo de recuperación de contraseña: `console` escribe el enlace en el log (docker compose logs api).
@@ -142,7 +150,7 @@ services:
     image: redis:7-alpine
     command: ["redis-server", "--maxmemory-policy", "noeviction", "--appendonly", "yes"]
     ports:
-      - "${REDIS_HOST_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"  # loopback only: Redis has no password (audit A05)
     volumes:
       - redis-data:/data
     healthcheck:
@@ -158,7 +166,7 @@ services:
   qdrant:
     image: qdrant/qdrant:v1.20.0
     ports:
-      - "${QDRANT_HOST_PORT:-6333}:6333"
+      - "127.0.0.1:${QDRANT_HOST_PORT:-6333}:6333"  # loopback only: Qdrant has no API key (audit A05)
     volumes:
       - qdrant-data:/qdrant/storage
     networks:
@@ -199,7 +207,7 @@ services:
     environment:
       CELERY_BROKER_URL: ${REDIS_URL:-redis://redis:6379/0}
     ports:
-      - "${FLOWER_HOST_PORT:-5555}:5555"
+      - "127.0.0.1:${FLOWER_HOST_PORT:-5555}:5555"  # loopback only: Flower has no login (audit A05)
     depends_on:
       redis:
         condition: service_healthy
