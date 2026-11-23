@@ -85,13 +85,13 @@ def test_the_stock_tool_reads_the_real_inventory_through_the_read_only_mcp_tool(
 def test_the_agents_own_credential_cannot_write_even_if_its_code_tried(agent_env, ticket):
     with pytest.raises(mcp_client.McpError) as failure:
         mcp_client.call_tool("create_ticket", NEW_TICKET)
-    assert failure.value.code == "INSUFFICIENT_SCOPE"
+    assert failure.value.code == "TOOL_NOT_ALLOWED"  # first line of defence: the agent's own allow-list (services/agent/tool_policy.py), before the network
     with pytest.raises(mcp_client.McpError) as failure:
         mcp_client.call_tool("update_ticket_status", {"ticket_id": ticket["id"], "status": "discarded"})
-    assert failure.value.code == "INSUFFICIENT_SCOPE"
+    assert failure.value.code == "TOOL_NOT_ALLOWED"
     with pytest.raises(mcp_client.McpError) as failure:
         mcp_client.call_tool("query_inventory", {"operation": "delete"})
-    assert failure.value.code == "INVENTORY_READ_ONLY"
+    assert failure.value.code == "TOOL_NOT_ALLOWED"  # the agent never sends a write operation (the server would answer INVENTORY_READ_ONLY: tests/mcps/test_mcp_server.py)
     assert tools.lookup_ticket(ticket["id"]).data["status"] == "open"
 
 

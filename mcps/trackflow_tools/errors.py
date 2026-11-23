@@ -13,6 +13,7 @@ Where they show up:
 | tool | the ticket / product does not exist | 200 + `isError` | `NOT_FOUND` |
 | tool | an attempt to write through the read-only inventory tool | 200 + `isError` | `INVENTORY_READ_ONLY` |
 | tool | the Incidents Manager / inventory did not answer or failed | 200 + `isError` | `UPSTREAM_UNAVAILABLE` |
+| tool | a final (irreversible) ticket status was asked without a person's confirmation | 200 + `isError` | `CONFIRMATION_REQUIRED` |
 | process | bad or missing configuration at start | exit code 2 | (message on stderr) |
 
 A tool failure is reported the MCP way (a result with `isError: true`), and its text starts with `[CODE]`.
@@ -27,8 +28,9 @@ VALIDATION_ERROR = "VALIDATION_ERROR"
 NOT_FOUND = "NOT_FOUND"
 INVENTORY_READ_ONLY = "INVENTORY_READ_ONLY"
 UPSTREAM_UNAVAILABLE = "UPSTREAM_UNAVAILABLE"
+CONFIRMATION_REQUIRED = "CONFIRMATION_REQUIRED"
 
-CODES = (INSUFFICIENT_SCOPE, VALIDATION_ERROR, NOT_FOUND, INVENTORY_READ_ONLY, UPSTREAM_UNAVAILABLE)
+CODES = (INSUFFICIENT_SCOPE, VALIDATION_ERROR, NOT_FOUND, INVENTORY_READ_ONLY, UPSTREAM_UNAVAILABLE, CONFIRMATION_REQUIRED)
 
 EXIT_CONFIG_ERROR = 2  # the server did not start: a required setting is missing or invalid
 

@@ -24,7 +24,8 @@ from .. import database
 from . import streaming
 from .graph import AgentBuildError, build_graph, compile_graph
 from .guardrails import events as guard_events
-from .guardrails import harness
+from .guardrails import harness, messages as guard_messages
+from .guardrails.sanitize import InputRejected, sanitize
 from .guardrails.session import SessionContext
 from .trace import TraceRecorder, read_trace, sources_used
 
@@ -128,6 +129,16 @@ def run_agent(question: str, *, graph=None, engine: Engine | None = None, run_id
     """
     graph, engine, run_id = graph or get_graph(), engine or database.engine, run_id or str(uuid.uuid4())
     context = guard_events.Context(conversation_id=conversation_id, actor=actor, run_id=run_id, engine=engine)
+    if guardrails:  # input validation and sanitization: the text every later step (guards, tools, model, trace) sees is the cleaned one
+        try:
+            cleaned = sanitize(question)
+        except InputRejected as error:
+            guard_events.record("input_validation", "structural", "blocked", str(error), text=str(question)[:80], context=context)
+            _guard_step(engine, run_id, "input_guard", "", {"guard": "input_validation", "failure_type": "structural", "action": "blocked", "outcome": "blocked_input"}, first_step=1)
+            return AgentResult(run_id=run_id, answer=guard_messages.INPUT_REJECTED, outcome="blocked_input", conversation_id=conversation_id, guardrail={"guard": "input_validation", "failure_type": "structural", "action": "blocked"})
+        if cleaned.changes:
+            guard_events.record("input_sanitized", "structural", "redacted", ", ".join(cleaned.changes), text=cleaned.text, context=context)
+        question = cleaned.text
     pre = harness.pre_check(question, session=session, conversation_id=conversation_id, actor=actor, run_id=run_id, engine=engine) if guardrails else None
     if pre is not None and pre.blocked:  # the model is never reached; even the fixed refusal goes through the output guard
         post = harness.post_check(pre.reply, pre.outcome, pre, question=question, session=session, conversation_id=conversation_id, actor=actor, run_id=run_id, engine=engine, trusted=True)

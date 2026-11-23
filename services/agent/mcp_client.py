@@ -27,6 +27,8 @@ import httpx
 from langchain_core.tools import ToolException
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
+from . import tool_policy
+
 DEFAULT_SCOPES = "tickets:read inventory:read"
 TOKEN_REFRESH_MARGIN_SECONDS = 30
 CODE_IN_MESSAGE = re.compile(r"\[([A-Z_]+)\]\s*(.*)", re.DOTALL)
@@ -117,6 +119,10 @@ def _structured(result: Any) -> Any:
 
 async def acall_tool(name: str, arguments: dict, *, settings: McpSettings | None = None) -> Any:
     """Calls one tool of the MCP server, authenticated, and returns its structured result. Raises McpError."""
+    try:
+        tool_policy.validate_call(name, arguments)  # the allow-list and argument check: nothing else is ever sent (services/agent/tool_policy.py)
+    except tool_policy.ToolCallRefused as refused:
+        raise McpError(refused.code, str(refused)) from None
     settings = settings or load_settings()
     token = await asyncio.to_thread(_provider(settings).token)
     client = MultiServerMCPClient({"trackflow": {"transport": "streamable_http", "url": settings.url, "headers": {"Authorization": f"Bearer {token}"}}})

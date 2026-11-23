@@ -217,9 +217,9 @@ def test_update_ticket_status_goes_through_the_lifecycle_endpoint_and_changes_th
 
 def test_the_lifecycle_rules_of_the_incident_manager_are_enforced_not_bypassed(stack):
     created = stack.call("create_ticket", NEW_TICKET, "ops-bot").structuredContent
-    jump = stack.call("update_ticket_status", {"ticket_id": created["id"], "status": "resolved"}, "ops-bot")  # open -> resolved is not allowed
+    jump = stack.call("update_ticket_status", {"ticket_id": created["id"], "status": "resolved", "confirmed_by_human": True}, "ops-bot")  # open -> resolved is not allowed
     assert code_of(jump) == errors.VALIDATION_ERROR and "can only move to" in jump.content[0].text
-    stack.call("update_ticket_status", {"ticket_id": created["id"], "status": "discarded"}, "ops-bot")
+    stack.call("update_ticket_status", {"ticket_id": created["id"], "status": "discarded", "confirmed_by_human": True}, "ops-bot")
     final = stack.call("update_ticket_status", {"ticket_id": created["id"], "status": "in_progress"}, "ops-bot")  # discarded is final
     assert code_of(final) == errors.VALIDATION_ERROR and "can no longer change" in final.content[0].text
     assert stack.call("get_ticket", {"ticket_id": created["id"]}, "reader").structuredContent["status"] == "discarded"
@@ -337,7 +337,7 @@ def test_authentication_authorization_and_validation_failures_have_different_cod
 
 
 def test_the_documented_codes_are_the_ones_the_module_defines():
-    assert set(errors.CODES) == {"INSUFFICIENT_SCOPE", "VALIDATION_ERROR", "NOT_FOUND", "INVENTORY_READ_ONLY", "UPSTREAM_UNAVAILABLE"}
+    assert set(errors.CODES) == {"INSUFFICIENT_SCOPE", "VALIDATION_ERROR", "NOT_FOUND", "INVENTORY_READ_ONLY", "UPSTREAM_UNAVAILABLE", "CONFIRMATION_REQUIRED"}
     for code in errors.CODES:
         assert f"`{code}`" in errors.__doc__  # the table in the module documentation lists it
     assert errors.EXIT_CONFIG_ERROR == 2
@@ -424,3 +424,15 @@ def test_the_smoke_client_runs_one_flow_per_tool_against_the_real_server(stack, 
     lines = {line.split(":")[0].strip(): line for line in out.splitlines() if line.startswith("  ")}
     assert "ERROR" in lines["update_ticket_status in_progress -> open (not allowed)"] and "[VALIDATION_ERROR]" in lines["update_ticket_status in_progress -> open (not allowed)"]
     assert "ERROR" in lines["query_inventory WRITE attempt (must fail)"] and "[INVENTORY_READ_ONLY]" in lines["query_inventory WRITE attempt (must fail)"]
+
+
+def test_a_final_ticket_status_needs_a_person_to_confirm_it(stack):
+    """Resolved and discarded cannot be undone (the lifecycle has no way back), so the tool refuses them unless confirmed_by_human is true (NIST cycle, CONTEXT section 5)."""
+    created = stack.call("create_ticket", NEW_TICKET, "ops-bot").structuredContent
+    held = stack.call("update_ticket_status", {"ticket_id": created["id"], "status": "discarded"}, "ops-bot")
+    assert code_of(held) == errors.CONFIRMATION_REQUIRED and "person must confirm" in held.content[0].text
+    assert stack.call("update_ticket_status", {"ticket_id": created["id"], "status": "discarded", "confirmed_by_human": "yes"}, "ops-bot").isError  # a string is not a confirmation
+    assert stack.call("get_ticket", {"ticket_id": created["id"]}, "reader").structuredContent["status"] == "open"  # nothing changed
+    assert not stack.call("update_ticket_status", {"ticket_id": created["id"], "status": "in_progress"}, "ops-bot").isError  # a reversible move needs no confirmation
+    done = stack.call("update_ticket_status", {"ticket_id": created["id"], "status": "discarded", "confirmed_by_human": True}, "ops-bot")
+    assert not done.isError and done.structuredContent["status"] == "discarded"

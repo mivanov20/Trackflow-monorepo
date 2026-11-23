@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func
 from sqlmodel import Session, select
 
+from .. import approvals
 from ..accounts import User
 from ..auth import get_current_user, require_staff
 from ..database import commit_session, get_session
@@ -109,6 +110,7 @@ def create_stock_exit(
     user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Registra una salida tras validar stock y tipo de movimiento."""
+    approvals.require_dispatch_confirmation(exit_type=payload.exit_type, quantity=payload.quantity, confirmed=payload.human_confirmation, actor=user.id)  # irreversible, high value: a person confirms
     sku = _sku_or_404(session, payload.sku_id, lock=True)
     available = current_stock(session, sku.id, payload.warehouse)
     if payload.quantity > available:
@@ -116,7 +118,7 @@ def create_stock_exit(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Insufficient stock for SKU '{sku.sku}'. Available: {available}, requested: {payload.quantity}.",
         )
-    movement = StockExit(**payload.model_dump(), user_uid=user.id)
+    movement = StockExit(**payload.model_dump(exclude={"human_confirmation"}), user_uid=user.id)
     session.add(movement)
     commit_session(session)
     session.refresh(movement)

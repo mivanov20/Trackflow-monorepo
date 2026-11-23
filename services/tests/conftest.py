@@ -66,8 +66,10 @@ NEW_INCIDENT = {
 @pytest.fixture(autouse=True)
 def _fresh_login_throttle():
     """The sign-in throttle is process-wide state: every test starts with no recorded failures."""
-    from services import hardening
+    from services import hardening, ratelimit
 
     hardening.reset_login_throttle()
+    ratelimit.reset()  # and the per-user model-call counters
     yield
     hardening.reset_login_throttle()
+    ratelimit.reset()

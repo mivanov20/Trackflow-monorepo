@@ -118,6 +118,17 @@ class ChatService:
                 raise ChatError("generation_in_progress", "The agent is still answering. Interrupt it to say something new.")
             return self._start_turn(session_id, user_id, role, text)
 
+    @staticmethod
+    def _rate_limit(user_id: str) -> None:
+        """Every user turn calls the model: it counts against the same per-user limit as the REST endpoints (services/ratelimit.py)."""
+        from .. import ratelimit
+
+        try:
+            ratelimit.check(user_id)
+        except ratelimit.RateLimited as error:
+            ratelimit.events.record("rate_limit", "security", "blocked", f"chat: over {error.limit} calls per {error.window}", context=ratelimit.events.Context(actor=user_id))
+            raise ChatError("rate_limited", f"Too many messages. Try again in {error.retry_after} seconds.") from None
+
     def interrupt(self, session_id: str, user_id: str, role: str, new_input: str) -> str:
         """Aborts the running generation; a non-empty `new_input` then starts a new turn. Returns what happened: `interrupting` (the abort was requested) or `started` (nothing was running, so it is just the next turn)."""
         with self._session_lock(session_id):
@@ -138,6 +149,7 @@ class ChatService:
 
     def _start_turn(self, session_id: str, user_id: str, role: str, text: str) -> dict:
         """Stores the user's message, opens the assistant message and starts the generation. The caller holds the session lock."""
+        self._rate_limit(user_id)  # before anything is stored or generated: a refused turn costs nothing (user_message and an interrupt with new input both pass here)
         user = store.add_message(self.engine, session_id, "user", text)
         store.set_session_status(self.engine, session_id, "active")
         self.bus.publish(session_id, protocol.USER_MESSAGE, {"session_id": session_id, "message_id": user["message_id"], "text": text})
