@@ -16,6 +16,7 @@ Severity: **Critical** = a customer or the open internet can read or change inte
 | H-01 | A07 | Backend | No limit on sign-in attempts: a password could be guessed without bound | High | Fixed |
 | H-02 | A05 | Backend | No security headers; interactive API docs published in production | Medium | Fixed |
 | H-03 | A01/A04 | Backend | Self-registration (`POST /auth/register`, `POST /users`) is open to the internet and created an account that every operational API (inventory including stock exits, incidents, RFP, reports, telemetry report, tasks) accepted: any stranger could read every B2B client's data and register stock movements | **High** (Critical on an internet-facing server) | **Fixed**: operational APIs require staff (`auth.require_staff`), first admin from the environment (`services/bootstrap.py`) |
+| C-04 | A06 | Backend | `python-jose` (JWT library) and `ecdsa`: advisories with no fixed release (found by `pip-audit`) | Medium (exposure low: HS256, algorithms fixed server-side) | **Fixed**: moved to PyJWT, removed |
 | M-01 | A06 | Frontend | After the fix `npm audit` still lists `next`/`postcss` (moderate/high) that only Next 16 (major) clears | Medium | Open, accepted |
 | M-02 | A02/A07 | Frontend | JWT kept in `localStorage` (`uis/backoffice/lib/auth.ts:125`): any XSS would read it | Medium | Open, accepted |
 | M-03 | A04 | Backend | `POST /telemetry/events` is public by design (login failures are reported before sign-in); a batch is capped at 100 events (`telemetry_schemas.py:15`) but there is no per-client rate limit | Medium | Open, accepted |
@@ -94,9 +95,9 @@ python scripts/security/route_auth_probe.py    # every route, no credentials: on
 
 | Lane | Applies? | Evidence and verdict |
 |---|---|---|
-| Backend | Yes | Python dependencies are bounded ranges in `services/requirements.txt` (`fastapi>=0.115,<1.0`, `bcrypt>=4.1,<6.0`, …). ⚠️ **Not scanned:** `pip-audit` is not installed in this environment and was not run; add it to CI (`pip-audit -r services/requirements.txt`). Honest gap, owner below. |
+| Backend | Yes | ✅ `pip-audit` of the API environment ([evidence/pip-audit.txt](evidence/pip-audit.txt)) found 5 vulnerabilities in 3 packages, including **python-jose** (the JWT library of `services/security.py`, advisory with no fixed release: HS256 forgery when algorithms are not restricted) and its dependency `ecdsa`. **Fixed:** the JWT layer moved to PyJWT and both packages were removed (`test_the_jwt_layer_uses_pyjwt_and_refuses_unsigned_and_wrong_algorithm_tokens`). One left: `pytest` (test runner only, never deployed, fix needs pytest 9, outside the pinned range): accepted. |
 | Frontend | Yes | ❌→✅ **C-03** (critical, fixed), ⚠️ M-01 (moderate/high, major upgrade needed). Evidence: [evidence/npm-audit.txt](evidence/npm-audit.txt). |
-| Agent | Yes | The agent stack (`langgraph`, `mcp`, `langchain-mcp-adapters`) is inside the same unscanned Python set; the MCP server pins `mcp>=1.24,<2.0` (`mcps/requirements.txt`). Same gap. |
+| Agent | Yes | ✅ The agent stack (`langgraph`, `mcp`, `langchain-mcp-adapters`) is part of the same scanned environment: no findings. The MCP server pins `mcp>=1.24,<2.0` and already used PyJWT. |
 
 ### A07 Identification and Authentication Failures
 
@@ -160,7 +161,7 @@ python scripts/security/route_auth_probe.py    # every route, no credentials: on
 | M-01 | Andrés Kim | Needs the Next 16 major upgrade | Plan the upgrade; PostCSS is build-time and only reachable with attacker-controlled CSS |
 | M-02 | Andrés Kim | Moving to an `HttpOnly` cookie changes the whole auth flow | Cookie session or short-lived token + refresh |
 | M-03 | Andrés Kim | Public by design | Per-address rate limit at the reverse proxy |
-| M-04, A06 backend | Andrés Kim | Not part of this fix | Commit lockfiles for the UIs, pin image digests, add `pip-audit` and `npm audit` to CI |
+| M-04 | Andrés Kim | Not part of this fix | Commit lockfiles for the UIs, pin image digests, add `pip-audit` and `npm audit` to CI so the scans in `evidence/` run on every change |
 
 ## Reproduce everything
 
@@ -168,5 +169,6 @@ python scripts/security/route_auth_probe.py    # every route, no credentials: on
 python scripts/security/before_after.py                      # the exploit tests: FAIL on origin/main, PASS here
 python scripts/security/route_auth_probe.py                  # no-credentials probe of every route
 python -m pytest services/tests/test_security_audit.py tests/infra -q
-npm audit --omit=dev                                          # dependencies (see evidence/npm-audit.txt)
+npm audit --omit=dev                                          # JS dependencies (see evidence/npm-audit.txt)
+uvx pip-audit --path services/.venv/Lib/site-packages          # Python dependencies (see evidence/pip-audit.txt)
 ```

@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from jose import jwt
+import jwt
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -205,7 +205,7 @@ def test_the_token_lifetime_comes_from_the_environment(api, outbox, monkeypatch)
     register(api)
     monkeypatch.setenv("PASSWORD_RESET_EXPIRE_MINUTES", "15")
     token = request_reset(api, outbox)
-    claims = jwt.get_unverified_claims(token)
+    claims = jwt.decode(token, options={"verify_signature": False})
     assert claims["exp"] - claims["iat"] == 15 * 60
     assert "15 minutes" in outbox[0].text
 
@@ -274,7 +274,7 @@ def test_a_reset_signs_out_sessions_issued_before_it(api, outbox):
 def test_the_store_keeps_only_a_hash_of_the_token_id_and_marks_it_used(api, outbox):
     register(api)
     token = request_reset(api, outbox)
-    jti = jwt.get_unverified_claims(token)["jti"]
+    jti = jwt.decode(token, options={"verify_signature": False})["jti"]
     raw = api.store_path.read_text(encoding="utf-8")
     assert token not in raw and jti not in raw and NEW_PASSWORD not in raw
     (record,) = json.loads(raw)["password_resets"].values()

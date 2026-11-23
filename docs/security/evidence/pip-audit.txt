@@ -1,0 +1,18 @@
+OWASP A06 (vulnerable components) - pip-audit of the Python environment the API runs in (services/.venv), run with `uvx pip-audit --path services/.venv/Lib/site-packages`
+
+BEFORE
+  Found 5 known vulnerabilities in 3 packages
+  python-jose 3.5.0  PYSEC-2026-4298 (CVE-2026-85394)  no fixed release  incomplete fix of CVE-2024-33663: DER-encoded public keys accepted as HMAC secrets (HS256 forgery) when algorithms are not restricted
+  ecdsa       0.19.2 PYSEC-2026-1325 (CVE-2024-23342)  no fixed release  Minerva timing attack on P-256 signing (python-jose's dependency)
+  pytest      8.4.2  PYSEC-2026-1845 (CVE-2025-71176)  fixed in 9.0.3    predictable /tmp/pytest-of-<user> directory on UNIX (test runner only)
+
+The API signed and verified its session and password-reset JWTs with python-jose (services/security.py). Exposure in practice was low (HS256 with an environment secret, algorithms fixed
+server-side), but there is no fixed release, so the library was removed rather than accepted.
+
+FIX  services/security.py now uses PyJWT (already a dependency of the MCP server); services/requirements.txt: python-jose[cryptography] -> PyJWT>=2.9,<3.0; python-jose and ecdsa uninstalled.
+     Proof: services/tests/test_security_audit.py::test_the_jwt_layer_uses_pyjwt_and_refuses_unsigned_and_wrong_algorithm_tokens, plus the existing auth and password-reset suites (99 tests).
+
+AFTER
+  Found 2 known vulnerabilities in 1 package
+  pytest 8.4.2  PYSEC-2026-1845  (test runner only, never in a deployed process; fix needs pytest 9, outside the pinned range <9.0) - accepted
+  trackflow-shared 0.1.0: local package, not on PyPI, not auditable by pip-audit.

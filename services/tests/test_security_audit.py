@@ -186,3 +186,21 @@ def test_the_first_admin_comes_from_the_environment_once(incident_client, monkey
     assert ensure_bootstrap_admin() is False  # an admin exists now: nothing is created or reset on later starts
     monkeypatch.delenv("BOOTSTRAP_ADMIN_PASSWORD")
     assert ensure_bootstrap_admin() is False
+
+
+# ---------------------------------------------------------------------------------------------------- A06 (python-jose)
+def test_the_jwt_layer_uses_pyjwt_and_refuses_unsigned_and_wrong_algorithm_tokens():
+    """pip-audit flagged python-jose (no fixed release). The API now uses PyJWT and the algorithm list is fixed server-side."""
+    import time
+    from pathlib import Path
+
+    import jwt
+
+    from services import security
+
+    assert "python-jose" not in (Path(security.__file__).parent / "requirements.txt").read_text(encoding="utf-8").lower()
+    claims = {"sub": "u1", "exp": int(time.time()) + 600}
+    for forged in (jwt.encode(claims, key=None, algorithm="none"), jwt.encode(claims, "x" * 40, algorithm="HS512")):
+        with pytest.raises(security.InvalidTokenError):
+            security.decode_access_token(forged)
+    assert security.decode_access_token(security.create_access_token("u1")).user_id == "u1"

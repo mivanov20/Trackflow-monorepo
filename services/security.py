@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError as JWTError  # PyJWT (python-jose has an unfixed advisory, PYSEC-2026-4298)
 from passlib.hash import bcrypt
 
 ALLOWED_ALGORITHMS = ("HS256", "HS384", "HS512")
@@ -167,7 +168,7 @@ def decode_access_token(token: str) -> TokenClaims:
             token,
             jwt_secret(),
             algorithms=[jwt_algorithm()],
-            options={"require_exp": True, "require_sub": True},
+            options={"require": ["exp", "sub"]},
         )
     except JWTError as error:
         raise InvalidTokenError("Token is invalid or expired.") from error
@@ -211,7 +212,7 @@ def decode_reset_token(token: str) -> tuple[str, str]:
             token,
             jwt_secret(),
             algorithms=[jwt_algorithm()],
-            options={"require_exp": True, "require_sub": True},
+            options={"require": ["exp", "sub"]},
         )
     except JWTError as error:
         raise InvalidTokenError("Reset token is invalid or expired.") from error
