@@ -19,11 +19,11 @@ from fastapi import APIRouter, Depends, Header
 from fastapi.responses import StreamingResponse
 
 from ..accounts import User
-from ..auth import get_current_user
+from ..auth import get_current_user, require_staff
 from ..events import bus, frame
 
 logger = logging.getLogger("trackflow.events")
-router = APIRouter(prefix="/rfp", tags=["rfp"])
+router = APIRouter(prefix="/rfp", tags=["rfp"], dependencies=[Depends(require_staff)])
 
 RETRY_MS = 3000
 

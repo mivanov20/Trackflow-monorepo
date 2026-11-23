@@ -21,7 +21,7 @@ from starlette.datastructures import UploadFile
 from trackflow_shared.incident_analysis import AnalysisResult, InvalidFileError, analyze_csv, results_csv_text
 
 from ..accounts import User
-from ..auth import get_current_user
+from ..auth import get_current_user, require_staff
 from .incidents import IncidentRoute, error_response
 
 logger = logging.getLogger("services.incident_analysis")
@@ -33,7 +33,7 @@ EXPORT_FILENAME = "results.csv"
 router = APIRouter(
     prefix="/api/incidents",
     tags=["incident analysis"],
-    dependencies=[Depends(get_current_user)],
+    dependencies=[Depends(require_staff)],
     route_class=IncidentRoute,
 )
 

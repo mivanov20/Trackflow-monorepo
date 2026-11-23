@@ -11,11 +11,11 @@ from fastapi import APIRouter, Depends, HTTPException, Path, status
 from pydantic import BaseModel
 
 from ..accounts import User
-from ..auth import get_current_user
+from ..auth import get_current_user, require_staff
 from ..celery_app import app as celery_app
 from ..error_text import describe_error
 
-router = APIRouter(prefix="/tasks", tags=["tasks"])
+router = APIRouter(prefix="/tasks", tags=["tasks"], dependencies=[Depends(require_staff)])
 
 # The Celery states, in lower case. RETRY is the wait between attempts after a failure: it is not final.
 STATUS_BY_STATE = {

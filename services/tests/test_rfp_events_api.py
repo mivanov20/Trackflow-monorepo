@@ -61,7 +61,11 @@ def live(tmp_path, monkeypatch):
     assert server.started, "the test server did not start"
     base = f"http://127.0.0.1:{port}"
     credentials = {"email": "commercial@example.com", "password": "correct-horse-42"}
-    assert httpx.post(f"{base}/auth/register", json={"name": "Commercial Team", **credentials}).status_code == 201
+    registered = httpx.post(f"{base}/auth/register", json={"name": "Commercial Team", **credentials})
+    assert registered.status_code == 201
+    from services import accounts
+
+    accounts.update_user(registered.json()["id"], role=accounts.Role.manager)  # the RFP stream is a staff area (audit H-03)
     token = httpx.post(f"{base}/auth/login", json=credentials).json()["access_token"]
     yield {"base": base, "token": token, "headers": {"Authorization": f"Bearer {token}"}, "engine": engine}
     server.should_exit = True

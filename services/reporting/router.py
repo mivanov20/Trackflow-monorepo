@@ -19,11 +19,11 @@ from data.pipelines import pipeline
 from data.pipelines.weekly_performance import config, queries, runs
 
 from ..accounts import User
-from ..auth import get_current_user
+from ..auth import get_current_user, require_staff
 from ..database import get_session
 from ..tasks import run_weekly_performance_pipeline
 
-router = APIRouter(prefix="/reporting", tags=["reporting"])
+router = APIRouter(prefix="/reporting", tags=["reporting"], dependencies=[Depends(require_staff)])
 
 # Starting a run spends compute, so it needs one of the roles that run operations.
 TRIGGER_ROLES = ("admin", "manager")

@@ -29,6 +29,7 @@ from .agent import validate_agent
 from .mailer import validate_email_config
 from .security import validate_security_config
 from . import hardening
+from .bootstrap import ensure_bootstrap_admin
 from data.pipelines.weekly_performance.schema import ensure_reporting
 from data.pipelines.rfp_intake import notifications as rfp_notifications, proposal_store as rfp_proposal_store, store as rfp_store
 from sqlmodel import Session
@@ -42,6 +43,7 @@ GENERIC_ERROR_MESSAGE = "Something went wrong on our side. Please try again in a
 async def lifespan(_: FastAPI):
     """Valida la configuración de seguridad y prepara la base de datos al iniciar el servicio."""
     validate_security_config()
+    ensure_bootstrap_admin()  # the first staff account, from the environment (docs/security/owasp-audit.md, H-03)
     rfp_notifications.set_publisher(event_bus.publish)  # the intake raises `rfp_ticket_created`; the SSE stream delivers it
     validate_email_config()
     validate_analysis_config()

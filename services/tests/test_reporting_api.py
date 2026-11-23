@@ -108,6 +108,9 @@ def test_latest_run_is_404_before_the_first_run_then_returns_its_metadata(api, i
 
 
 def test_trigger_needs_authentication_and_the_manager_or_admin_role(api):
+    from services import accounts
+
+    accounts.update_user(api.get("/auth/me").json()["id"], role=accounts.Role.user)  # the fixture's operative is staff; this test is about a plain account
     assert api.post("/reporting/pipeline-runs").status_code == 403  # an operative with the plain `user` role
     api.headers.pop("Authorization")
     assert api.post("/reporting/pipeline-runs").status_code == 401

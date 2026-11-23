@@ -23,7 +23,7 @@ from trackflow_shared.incidents import (
     validate_transition,
 )
 
-from ..auth import get_current_user
+from ..auth import get_current_user, require_staff
 from ..database import SERVICE_UNAVAILABLE_MESSAGE, commit_session, get_session
 from ..models import Incident, utc_now
 from ..schemas import IncidentRead
@@ -92,7 +92,7 @@ class IncidentRoute(APIRoute):
 router = APIRouter(
     prefix="/api/incidents",
     tags=["incidents"],
-    dependencies=[Depends(get_current_user)],
+    dependencies=[Depends(require_staff)],
     route_class=IncidentRoute,
 )
 

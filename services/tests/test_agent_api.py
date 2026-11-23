@@ -88,6 +88,9 @@ def test_a_failed_run_can_be_found_by_its_reference_in_the_trace(incident_client
 
 def test_the_trace_endpoint_returns_the_steps_and_checkpoints_to_a_manager_only(incident_client, pipeline):
     run_id = incident_client.post("/agent/query", json={"question": "Can we guarantee delivery times on Black Friday?"}).json()["run_id"]
+    from services import accounts
+
+    accounts.update_user(incident_client.get("/auth/me").json()["id"], role=accounts.Role.user)  # the fixture's operative is staff; this test is about a plain account
     assert incident_client.get(f"/agent/runs/{run_id}/trace").status_code == 403  # a plain user
     app.dependency_overrides[get_current_user] = lambda: User(id="1", email="m@example.com", hashed_password="x", role=Role.manager, created_at="2026-01-01T00:00:00Z")
     try:

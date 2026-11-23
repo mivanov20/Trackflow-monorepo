@@ -85,6 +85,9 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001}
       # Endurecimiento (docs/security/server-hardening.md): production apaga /docs; TRUSTED_PROXY=true cuenta la IP real tras el proxy inverso.
       APP_ENV: ${APP_ENV:-}
+      # Primer administrador (las cuentas que se registran solas son `user` y no usan las APIs operativas). Quita la contraseña del entorno tras el primer arranque.
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
       TRUSTED_PROXY: ${TRUSTED_PROXY:-}
       LOGIN_MAX_FAILURES: ${LOGIN_MAX_FAILURES:-5}
       LOGIN_WINDOW_SECONDS: ${LOGIN_WINDOW_SECONDS:-900}

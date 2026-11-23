@@ -153,3 +153,36 @@ def test_a_customer_asking_for_another_customers_order_address_is_refused(agent_
     app.dependency_overrides[get_current_user] = lambda: account(Role.user, "cust-ana")
     body = incident_client.post("/agent/query", json={"question": "What is the delivery address of order #45821?"}).json()
     assert body["outcome"] == "blocked_authorization" and agent_env["prompts"] == []  # the model was never reached
+
+
+# ---------------------------------------------------------------------------------------------------- H-03
+OPERATIONAL = [("GET", "/inventory/products"), ("GET", "/inventory/orders"), ("POST", "/inventory/orders/outbound"), ("GET", "/api/incidents"), ("GET", "/telemetry/report"),
+               ("GET", "/reporting/weekly-warehouse-client-performance"), ("GET", "/rfp/tickets"), ("GET", "/rfp/events"), ("GET", f"/tasks/{'0' * 8}-0000-0000-0000-{'0' * 12}")]
+
+
+def test_a_self_registered_account_cannot_use_the_operational_apis(tmp_path, monkeypatch, incident_client):
+    incident_client.headers.pop("Authorization")
+    credentials = {"email": "stranger@example.com", "password": "correct-horse-42"}
+    assert incident_client.post("/auth/register", json={"name": "Stranger", **credentials}).status_code == 201  # anyone on the internet can do this
+    token = incident_client.post("/auth/login", json=credentials).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+    for method, path in OPERATIONAL:
+        assert incident_client.request(method, path, headers=headers, json={}).status_code == 403, (method, path)
+
+
+def test_staff_still_reach_the_operational_apis(incident_client):
+    for path in ("/inventory/products", "/api/incidents", "/rfp/tickets"):
+        assert incident_client.get(path).status_code == 200, path  # the fixture's operative is a manager
+
+
+def test_the_first_admin_comes_from_the_environment_once(incident_client, monkeypatch):
+    from services import accounts
+    from services.bootstrap import ensure_bootstrap_admin
+
+    monkeypatch.setenv("BOOTSTRAP_ADMIN_EMAIL", "root-admin@example.com")
+    monkeypatch.setenv("BOOTSTRAP_ADMIN_PASSWORD", "correct-horse-42")
+    assert ensure_bootstrap_admin() is True
+    assert accounts.get_user_by_email("root-admin@example.com").role == Role.admin
+    assert ensure_bootstrap_admin() is False  # an admin exists now: nothing is created or reset on later starts
+    monkeypatch.delenv("BOOTSTRAP_ADMIN_PASSWORD")
+    assert ensure_bootstrap_admin() is False

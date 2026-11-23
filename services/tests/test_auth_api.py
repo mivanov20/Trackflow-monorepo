@@ -226,6 +226,7 @@ def test_public_routes_do_not_demand_a_token(api, method, path):
 
 def test_existing_routes_still_work_with_a_valid_token(api):
     register(api)
+    make_admin("alice@example.com")  # self-registration gives role `user`; the operational APIs are for staff
     headers = auth(api, "alice@example.com")
     assert api.get("/inventory/products", headers=headers).status_code == 200
     assert api.get("/inventory/orders", headers=headers).status_code == 200

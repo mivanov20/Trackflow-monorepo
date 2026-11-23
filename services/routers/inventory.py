@@ -5,12 +5,12 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from ..accounts import User
-from ..auth import get_current_user
+from ..auth import get_current_user, require_staff
 from ..database import commit_session, get_session
 from ..models import SKU, StockEntry, StockExit
 from ..schemas import InventoryOrderRead, SKUCreate, SKURead, StockEntryCreate, StockExitCreate
 
-router = APIRouter(prefix="/inventory", tags=["inventory"], dependencies=[Depends(get_current_user)])
+router = APIRouter(prefix="/inventory", tags=["inventory"], dependencies=[Depends(require_staff)])
 
 
 def current_stock(session: Session, sku_id: int, warehouse: str) -> int:

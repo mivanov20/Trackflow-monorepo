@@ -15,7 +15,7 @@ Severity: **Critical** = a customer or the open internet can read or change inte
 | C-03 | A06 | Frontend | Next.js 15.5.25 locked: `npm audit` **critical** (unauthenticated RCE in the Image Optimization API with SVG, cache poisoning, cross-client response injection) | **Critical** | **Fixed** (15.5.29), proof below |
 | H-01 | A07 | Backend | No limit on sign-in attempts: a password could be guessed without bound | High | Fixed |
 | H-02 | A05 | Backend | No security headers; interactive API docs published in production | Medium | Fixed |
-| H-03 | A01/A04 | Backend | Self-registration (`POST /auth/register`, `POST /users`) creates a role `user` account that the operational APIs (inventory, incidents, RFP, reports) accept, and the repo has no bootstrap for staff roles | High | **Open, accepted** (see "Open risks") |
+| H-03 | A01/A04 | Backend | Self-registration (`POST /auth/register`, `POST /users`) is open to the internet and created an account that every operational API (inventory including stock exits, incidents, RFP, reports, telemetry report, tasks) accepted: any stranger could read every B2B client's data and register stock movements | **High** (Critical on an internet-facing server) | **Fixed**: operational APIs require staff (`auth.require_staff`), first admin from the environment (`services/bootstrap.py`) |
 | M-01 | A06 | Frontend | After the fix `npm audit` still lists `next`/`postcss` (moderate/high) that only Next 16 (major) clears | Medium | Open, accepted |
 | M-02 | A02/A07 | Frontend | JWT kept in `localStorage` (`uis/backoffice/lib/auth.ts:125`): any XSS would read it | Medium | Open, accepted |
 | M-03 | A04 | Backend | `POST /telemetry/events` is public by design (login failures are reported before sign-in); a batch is capped at 100 events (`telemetry_schemas.py:15`) but there is no per-client rate limit | Medium | Open, accepted |
@@ -26,10 +26,10 @@ Before/after of the criticals, in one command:
 
 ```powershell
 python scripts/security/before_after.py        # exploits FAIL on origin/main, PASS here (writes docs/security/evidence/before-after.txt)
-python scripts/security/route_auth_probe.py    # every route, no credentials: only the 8 intended public routes answer
+python scripts/security/route_auth_probe.py    # every route, no credentials: only the 8 intended public routes answer; the staff gate is proven by the H-03 tests
 ```
 
-## The three critical fixes, with reproducible proof
+## The critical fixes (and H-03), with reproducible proof
 
 **C-01: the agent used a tool its caller may not use (A01, agent lane).** `lookup_ticket` and `lookup_stock` called the MCP server with the *agent's own* service token (`tickets:read inventory:read`), for **any** signed-in account. A customer typing "status of ticket 482" got the internal record into the model's prompt; "how many hoodies do we have" returned every brand's rows (`client_name`, `current_stock`) — the B2B-client-to-client leak of CONTEXT section 3. The guardrail harness protected *orders* (a customer's own tracking numbers) but nothing protected the two live tools.
 *Fix:* the agent now acts with the permissions of whoever asks. `run_agent` sets `tools_allowed = session.is_staff`; for a customer session the `lookup_ticket`/`lookup_stock` nodes return a `forbidden` result **without calling the tool**, so no internal record is read, the model never sees one, and the answer is a fixed message (`services/agent/graph.py`, `services/agent/tools.py`, `services/agent/runner.py`). Staff (`admin`, `manager`) keep the tools.
@@ -43,13 +43,17 @@ python scripts/security/route_auth_probe.py    # every route, no credentials: on
 *Fix:* `npm audit fix` moved `next` to 15.5.29 (a patch inside `^15`), plus `sharp` and `source-map-js`; the `next` floor in all three `package.json` files is now `^15.5.29`.
 *Proof:* [evidence/npm-audit.txt](evidence/npm-audit.txt): **critical 4 → 0**, total 4 → 2 (the two left are not critical, see M-01).
 
+**H-03: open registration opened the operational APIs (A01/A04, backend).** The probe shows that registration is public on purpose, but a freshly registered account had the same access as staff to inventory (including `POST /inventory/orders/outbound`, which registers stock leaving a warehouse), incidents, reports and the RFP pipeline, so a stranger could read every B2B client's volumes and write stock movements.
+*Fix:* `auth.require_staff` (roles `admin`/`manager`) guards those routers; a plain `user` gets `403` there and keeps chat, the agent, its profile and its own account. Because nothing could then create a first staff member, `services/bootstrap.py` creates the first admin at startup from `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD` (only when no active admin exists; remove the password afterwards) and `scripts/create_staff_user.py` does the same by hand; admins promote others with `PUT /users/{id}`. **Behaviour change:** after deploying, existing accounts that are plain `user` must be promoted, and the MCP server's service account (`API_SERVICE_EMAIL`) must be `manager`.
+*Proof:* `test_a_self_registered_account_cannot_use_the_operational_apis` (9 routes answer 403; on `main` they answer 200), `test_staff_still_reach_the_operational_apis`, `test_the_first_admin_comes_from_the_environment_once`; the existing suite was updated so its operative is a manager, and the tests that are about a plain account demote it explicitly.
+
 ## OWASP Top 10 (2021), per category and per component
 
 ### A01 Broken Access Control
 
 | Lane | Applies? | Evidence and verdict |
 |---|---|---|
-| Backend | Yes | ✅ **Authentication:** the probe called all 55 operations with no token: 47 answer 401/403 and 8 are public on purpose (`/auth/login|token|register|forgot-password|reset-password`, `POST /users`, `POST /telemetry/events`, `/health`), see `evidence/route-auth-probe.txt`. Routers carry a router-level `Depends(get_current_user)` (`inventory.py:12`, `incidents.py:92`). ✅ **Object and role checks:** `users.py:61` (only admins change role/active), `auth.py:97` (`require_self_or_admin`), `agent.py:26,68,78` (traces and guardrail data: admin/manager), `rfp.py:263` (only approver roles approve), `chat.py:123` (a session of another user answers 404, never 403, so it cannot be enumerated). ⚠️ **H-03:** any self-registered account is accepted by the inventory/incident/report routes (authorization is per role only where listed above). |
+| Backend | Yes | ✅ **Authentication:** the probe called all 55 operations with no token: 47 answer 401/403 and 8 are public on purpose (`/auth/login|token|register|forgot-password|reset-password`, `POST /users`, `POST /telemetry/events`, `/health`), see `evidence/route-auth-probe.txt`. Routers carry a router-level `Depends(get_current_user)` (`inventory.py:12`, `incidents.py:92`). ✅ **Object and role checks:** `users.py:61` (only admins change role/active), `auth.py:97` (`require_self_or_admin`), `agent.py:26,68,78` (traces and guardrail data: admin/manager), `rfp.py:263` (only approver roles approve), `chat.py:123` (a session of another user answers 404, never 403, so it cannot be enumerated). ✅ **H-03 fixed:** inventory, incidents, incident analysis, reports, RFP (including its SSE stream), tasks and the telemetry report depend on `require_staff` (`auth.py`): a self-registered `user` gets `403`; admins promote staff with `PUT /users/{id}`, and the first admin comes from `BOOTSTRAP_ADMIN_EMAIL/PASSWORD` or `scripts/create_staff_user.py`. Proof: `test_a_self_registered_account_cannot_use_the_operational_apis` (9 routes, fails on `main`) and `test_staff_still_reach_the_operational_apis`. |
 | Frontend | Yes | The UI hides nothing the API does not enforce: every call carries the bearer token and the server decides; the UI only reads the role the server reports. ✅ no secrets in the bundle. |
 | **Agent** | **Yes** | ❌→✅ **C-01** (fixed): a user could invoke a tool they should not. ✅ Orders: the harness checks every order/tracking number in the question against the caller's own shipments (`guardrails/session.py:89`, `output.py:82`): "what is the delivery address of order #45821" from another customer is blocked before the model (`test_a_customer_asking_for_another_customers_order_address_is_refused`). ✅ The agent is **read-only**: it calls only `get_ticket` and `query_inventory`; a test (`tests/pipelines/test_agent_tools.py`) enforces that no write tool is ever called. ✅ B2B: the stock tool is staff-only now; a client portal must add a per-client filter before exposing it to a brand (not built here). |
 
@@ -73,7 +77,7 @@ python scripts/security/route_auth_probe.py    # every route, no credentials: on
 
 | Lane | Applies? | Evidence and verdict |
 |---|---|---|
-| Backend | Yes | ✅ Account recovery answers identically whether or not the address exists and has a cooldown (`auth.py:192`, `security.py:69`); sign-in burns the same time for unknown emails (`burn_password_check`); H-01 closed the missing attempt limit. ⚠️ **H-03** (open registration vs. roles) and **M-03** (public telemetry) are design decisions with an owner below. |
+| Backend | Yes | ✅ Account recovery answers identically whether or not the address exists and has a cooldown (`auth.py:192`, `security.py:69`); sign-in burns the same time for unknown emails (`burn_password_check`); H-01 closed the missing attempt limit. ✅ **H-03** (open registration vs. roles) is closed by the staff gate; ⚠️ **M-03** (public telemetry) is a design decision with an owner below. |
 | Frontend | Yes | ✅ The chat client treats the server as the authority (`chat-state.ts` applies only server events); size limits mirror the API's. |
 | **Agent** | **Yes** | ✅ Designed for least autonomy: one question at a time, rule-based planner (a user cannot choose a tool by wording an instruction: `routing.py` is a pure function), a fixed answer when a source is forbidden or down, per-step timeout of 4 s, a trace of every step. **Irreversible actions (CONTEXT section 5)** — return above a monetary value, dispatch of a high-value shipment, changing a carrier in transit, sharing one B2B client's data with another: the agent has **no tool for any of them** (its token carries only `tickets:read inventory:read` and the MCP server would answer `[INSUFFICIENT_SCOPE]` to a write: `mcps/trackflow_tools/server.py`); they are therefore human-only today. When the returns and carrier engines are built they must be tools behind a confirmation step, never behind the agent's own judgment. |
 
@@ -153,7 +157,6 @@ python scripts/security/route_auth_probe.py    # every route, no credentials: on
 
 | ID | Owner | Why it stays | Next step |
 |---|---|---|---|
-| H-03 | Andrés Kim | Closing it means choosing the registration policy (invite-only, admin approval, or a default role with no operational access) and creating a staff bootstrap: a product decision, and gating the routers today would lock everyone out because no staff account is created by the repo | Make registration invite-only and add a `require_staff` dependency to inventory, incidents and reports, with an admin bootstrap command |
 | M-01 | Andrés Kim | Needs the Next 16 major upgrade | Plan the upgrade; PostCSS is build-time and only reachable with attacker-controlled CSS |
 | M-02 | Andrés Kim | Moving to an `HttpOnly` cookie changes the whole auth flow | Cookie session or short-lived token + refresh |
 | M-03 | Andrés Kim | Public by design | Per-address rate limit at the reverse proxy |

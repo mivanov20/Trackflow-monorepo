@@ -119,6 +119,9 @@ def test_invalid_and_out_of_turn_decisions_are_refused_with_the_right_status(inc
 def test_only_a_staff_account_can_register_an_owners_decision(incident_client, monkeypatch):
     ticket_id = upload(incident_client, 1)
     monkeypatch.setenv("RFP_APPROVER_ROLES", "admin,manager")  # the default: a plain account is not staff
+    from services import accounts
+
+    accounts.update_user(incident_client.get("/auth/me").json()["id"], role=accounts.Role.user)  # the account falls back to a plain `user`: not staff
     assert decide(incident_client, ticket_id, "warehouse").status_code == 403
     incident_client.headers.pop("Authorization")
     assert decide(incident_client, ticket_id, "warehouse").status_code == 401

@@ -94,6 +94,17 @@ def get_current_user(token: str | None = Depends(oauth2_scheme)) -> User:
     return user
 
 
+STAFF_ROLES = (Role.admin, Role.manager)
+
+
+def require_staff(current_user: User = Depends(get_current_user)) -> User:
+    """Operational APIs (inventory, incidents, reports, RFP, tasks) are for TrackFlow staff. Anyone can self-register, and that account has role `user`: it gets 403 here
+    (OWASP A01, audit finding H-03). Staff roles are given by an admin (`PUT /users/{id}`) or by the bootstrap admin (`services/bootstrap.py`)."""
+    if current_user.role not in STAFF_ROLES:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This area is restricted to TrackFlow staff.")
+    return current_user
+
+
 def require_self_or_admin(current_user: User, target_user_id: str) -> None:
     """403 salvo que el usuario actual sea el propio objetivo o un administrador."""
     if current_user.id != target_user_id and current_user.role != Role.admin:
