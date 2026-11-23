@@ -63,8 +63,31 @@ def record(guard: str, failure_type: str, action: str, reason: str, *, text: str
         with Session(ctx.engine or database.engine) as session:
             session.add(GuardrailEvent(guard=guard, failure_type=failure_type, action=action, reason=reason, conversation_id=ctx.conversation_id, actor=ctx.actor, run_id=ctx.run_id, excerpt=excerpt))
             session.commit()
+            if failure_type == "security" and ctx.actor:
+                _alert_on_repeated_attacks(session, ctx.actor)
     except Exception:  # noqa: BLE001 - observability must never take the request down
         logger.warning("could not store the guardrail event (the table may not exist yet)")
+
+
+ALERT_AFTER = 5  # security events by one account ...
+ALERT_WINDOW_MINUTES = 10  # ... inside this many minutes raise an alert (override: SECURITY_ALERT_AFTER, SECURITY_ALERT_WINDOW_MINUTES)
+
+
+def _alert_on_repeated_attacks(session: Session, actor: str) -> None:
+    """DETECT: one account that keeps tripping the security guards (injection, extraction, someone else's order, rate limit) is probing the agent. The Nth event in the window logs a
+    single `security_alert` at ERROR level (once per burst: it fires on the Nth event exactly, not on every later one), which is what a log alert or a pager rule watches for."""
+    import os
+    from datetime import timedelta
+
+    try:
+        limit = max(1, int(os.getenv("SECURITY_ALERT_AFTER", ALERT_AFTER)))
+        window = max(1, int(os.getenv("SECURITY_ALERT_WINDOW_MINUTES", ALERT_WINDOW_MINUTES)))
+    except ValueError:
+        limit, window = ALERT_AFTER, ALERT_WINDOW_MINUTES
+    since = datetime.now(timezone.utc) - timedelta(minutes=window)
+    count = session.exec(select(func.count()).select_from(GuardrailEvent).where(GuardrailEvent.actor == actor, GuardrailEvent.failure_type == "security", GuardrailEvent.created_at >= since)).one()
+    if count == limit:
+        logger.error(json.dumps({"event": "security_alert", "actor": actor, "security_events": count, "window_minutes": window, "reason": "repeated attempts against the agent's guardrails"}))
 
 
 def summary(engine: Engine | None = None, since: datetime | None = None) -> dict:

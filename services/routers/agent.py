@@ -19,6 +19,7 @@ from ..agent.guardrails.session import SessionContext
 from ..agent.trace import sources_used
 from ..accounts import User
 from ..auth import get_current_user
+from ..ratelimit import limit_model_calls
 
 logger = logging.getLogger("trackflow.agent")
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -47,7 +48,7 @@ class AgentAnswer(BaseModel):
 
 
 @router.post("/query", response_model=AgentAnswer)
-def ask_agent(body: AgentQuestion, user: User = Depends(get_current_user)) -> AgentAnswer:
+def ask_agent(body: AgentQuestion, user: User = Depends(limit_model_calls)) -> AgentAnswer:
     run_id = str(uuid.uuid4())
     try:
         result = agent.run_agent(body.question, run_id=run_id, conversation_id=body.conversation_id, actor=user.id, session=SessionContext(customer_id=user.id, role=getattr(user.role, "value", str(user.role))))

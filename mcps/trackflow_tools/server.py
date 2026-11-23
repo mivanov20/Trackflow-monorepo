@@ -32,7 +32,7 @@ from trackflow_shared.incidents import BRANCHES, CATEGORIES, ORIGINS, STATUSES
 
 from . import audit, errors
 from .config import SCOPES, Settings
-from .errors import INSUFFICIENT_SCOPE, INVENTORY_READ_ONLY, VALIDATION_ERROR, ToolFailure
+from .errors import CONFIRMATION_REQUIRED, INSUFFICIENT_SCOPE, INVENTORY_READ_ONLY, VALIDATION_ERROR, ToolFailure
 from .upstream import IncidentsClient, InventoryClient, InventoryReadOnly
 
 INSTRUCTIONS = """TrackFlow company tools. Two systems, four tools:
@@ -43,6 +43,7 @@ Failures start with a code in brackets: [VALIDATION_ERROR] (fix the argument and
 (the company system did not answer: retry later, do not guess the value). Ticket lifecycle: open -> in_progress -> resolved; open or in_progress -> discarded; resolved and discarded are final."""
 
 ALLOWED_OPERATIONS = ("search", "get", "list")
+FINAL_STATUSES = ("resolved", "discarded")  # irreversible: the lifecycle has no way back from them
 # anything that asks the inventory to change is a write, whatever the wording
 WRITE_WORDS = re.compile(r"(?i)\b(create|add|insert|new|update|modify|edit|patch|put|set|adjust|correct|change|delete|remove|drop|write|receive|dispatch|ship|transfer|move|reserve|increment|decrement|subtract)\b")
 
@@ -154,16 +155,19 @@ def build_server(settings: Settings, mcp_auth: MCPAuth, incidents: IncidentsClie
         name="update_ticket_status",
         description="Move a ticket along its lifecycle through the Incidents Manager's status endpoint. Writes data. Allowed moves: open -> in_progress or discarded; "
         "in_progress -> resolved or discarded; resolved and discarded are final. Returns the updated ticket. Needs scope tickets:write. "
-        "Errors: [VALIDATION_ERROR] for an unknown status or a move the lifecycle does not allow, [NOT_FOUND] if there is no such ticket.",
+        "Errors: [VALIDATION_ERROR] for an unknown status or a move the lifecycle does not allow, [CONFIRMATION_REQUIRED] for resolved/discarded without confirmed_by_human=true, [NOT_FOUND] if there is no such ticket.",
         annotations=ToolAnnotations(title="Update ticket status", readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False),
     )
     @audited("update_ticket_status")
     async def update_ticket_status(
         ticket_id: TicketId,
         status: Annotated[str, Field(description="The new status.", json_schema_extra=_choice(STATUSES))],
+        confirmed_by_human: Annotated[bool, Field(strict=True, description="Must be true for a FINAL status (resolved, discarded): they cannot be undone, so a person confirms them.")] = False,
     ) -> Ticket:
         require_scope("tickets:write")
         check_ticket_id(ticket_id)
+        if status in FINAL_STATUSES and confirmed_by_human is not True:
+            raise ToolFailure(CONFIRMATION_REQUIRED, f"'{status}' is final and cannot be undone: a person must confirm it (confirmed_by_human=true).")
         return Ticket.model_validate(await incidents.update_status(ticket_id, status))
 
     @server.tool(

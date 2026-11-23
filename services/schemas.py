@@ -36,6 +36,7 @@ class StockExitCreate(BaseModel):
     exit_type: ExitType
     tracking_number: str | None = Field(default=None, max_length=120)
     warehouse: Warehouse
+    human_confirmation: bool = Field(default=False, strict=True)  # strict: only a real JSON true confirms, never "yes" or 1. Set by the staff member who confirms a high-value dispatch (services/approvals.py); never stored
 
     @model_validator(mode="after")
     def validate_tracking_number(self) -> "StockExitCreate":

@@ -91,6 +91,13 @@ services:
       TRUSTED_PROXY: ${TRUSTED_PROXY:-}
       LOGIN_MAX_FAILURES: ${LOGIN_MAX_FAILURES:-5}
       LOGIN_WINDOW_SECONDS: ${LOGIN_WINDOW_SECONDS:-900}
+      # Control de coste y acciones irreversibles (docs/security/nist-report.md)
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-20}
+      RATE_LIMIT_PER_HOUR: ${RATE_LIMIT_PER_HOUR:-200}
+      DISPATCH_CONFIRMATION_UNITS: ${DISPATCH_CONFIRMATION_UNITS:-250}
+      RETURN_APPROVAL_LIMIT_EUR: ${RETURN_APPROVAL_LIMIT_EUR:-150}
+      SECURITY_ALERT_AFTER: ${SECURITY_ALERT_AFTER:-5}
+      SECURITY_ALERT_WINDOW_MINUTES: ${SECURITY_ALERT_WINDOW_MINUTES:-10}
       # Dirección del receptor de telemetría (ruta de esta API o URL completa). Se valida al arrancar.
       TELEMETRY_ENDPOINT: ${TELEMETRY_ENDPOINT:-/telemetry/events}
       # Correo de recuperación de contraseña: `console` escribe el enlace en el log (docker compose logs api).

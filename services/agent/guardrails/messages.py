@@ -12,6 +12,7 @@ PURPOSE = "tracking a shipment, return policies and SLAs (United States and Spai
 HELP_LINE = f"I'm TrackFlow's customer support assistant, and I can help with {PURPOSE}."
 
 INSTRUCTION_CHANGE = f"I can't change or ignore my instructions, and I won't work without them. {HELP_LINE} What do you need help with?"
+INPUT_REJECTED = f"I couldn't read that message: it is too long or has no readable text. {HELP_LINE} Please send a shorter message about your shipment, return or delivery problem."
 PROMPT_EXTRACTION = f"I can't share my internal instructions. {HELP_LINE} What can I help you with?"
 PERSONAL_TASK = f"I can't help with that: it has nothing to do with your shipments. {HELP_LINE} Tell me about your order, return or delivery problem and I'll get started."
 AUTHORIZATION = (

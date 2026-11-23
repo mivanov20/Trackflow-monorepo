@@ -31,6 +31,7 @@ from data.pipelines.rfp_intake.config import MAX_UPLOAD_BYTES, raw_dir, relative
 
 from ..accounts import Role, User
 from ..auth import get_current_user, require_staff
+from ..ratelimit import limit_model_calls
 from ..database import get_session
 
 logger = logging.getLogger("trackflow.rfp")
@@ -176,7 +177,7 @@ def ticket_detail(ticket, sections) -> dict[str, Any]:
 async def upload_rfp(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    user: User = Depends(get_current_user),
+    user: User = Depends(limit_model_calls),  # the analysis runs several model calls: counted against the per-user limit (services/ratelimit.py)
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """Stores the PDF under `data/raw/rfp/`, creates the ticket as `analyzing`, and returns. The analysis runs in the background; poll `GET /rfp/tickets/{id}`."""
@@ -220,7 +221,7 @@ def get_rfp_ticket(ticket_id: str, user: User = Depends(get_current_user), sessi
 
 
 @router.post("/tickets/{ticket_id}/proposal", status_code=status.HTTP_202_ACCEPTED)
-def start_proposal(ticket_id: str, background_tasks: BackgroundTasks, user: User = Depends(get_current_user), session: Session = Depends(get_session)) -> dict[str, Any]:
+def start_proposal(ticket_id: str, background_tasks: BackgroundTasks, user: User = Depends(limit_model_calls), session: Session = Depends(get_session)) -> dict[str, Any]:
     """Starts (or restarts, after a failure) the proposal drafting of a ticket whose intake is complete. Answers at once; the drafting runs in the background."""
     ticket = store.get_ticket(session, ticket_id)
     if ticket is None:
