@@ -39,6 +39,45 @@ MODEL_FEATURES = [
     "quarter",
 ]
 
+# Experiment of the evaluation (not used by the forecast): the same-month memory averaged over ALL earlier years instead of
+# the single observation of last year, see `seasonal_index_rel`.
+EXTENDED_FEATURES = MODEL_FEATURES + ["seasonal_index_rel"]
+BASE_GROWTH = 0.06  # CONTEXT: base annual growth X = 6%; used while there is not yet a full previous year to measure
+GROWTH_FEATURES = MODEL_FEATURES + ["yoy_growth_prev"]
+SEASONAL_INDEX_FEATURES = [c if c != "lag_12_rel" else "seasonal_index_rel" for c in MODEL_FEATURES]
+GROWTH_AND_SEASONAL_FEATURES = SEASONAL_INDEX_FEATURES + ["yoy_growth_prev"]
+
+
+def yoy_growth_prev(history: np.ndarray) -> float:
+    """Growth of the last 12 months over the 12 before them (trailing mean vs the trailing mean a year earlier).
+
+    CONTEXT: yearly growth alternates between about 9% and about 3%. The trailing mean lags the growth of the current year,
+    so the model under-forecasts in a high-growth year and over-forecasts in a low-growth one; the growth of the year
+    that just ended says which of the two is coming. Causal (history only). Before there are 24 months it is BASE_GROWTH.
+    """
+    if len(history) < 24:
+        return BASE_GROWTH
+    return float(history[-12:].mean() / history[-24:-12].mean() - 1)
+
+
+def seasonal_index_rel(history: np.ndarray) -> float:
+    """Mean over the earlier years of `revenue / mean of its previous 12 months` for the month being predicted.
+
+    `lag_12_rel` is ONE observation of this month and carries that year's noise (about 2.6%) straight into the
+    prediction. Averaging the same ratio over every earlier year keeps the seasonal shape and removes most of that noise.
+    Causal: only history[:len] is read. With less than two years of history there is no earlier ratio, and it falls back
+    to `lag_12_rel`.
+    """
+    n = len(history)
+    ratios = []
+    position = n - 12  # the same calendar month, one year back, two years back...
+    while position >= 12:
+        ratios.append(history[position] / history[position - 12 : position].mean())
+        position -= 12
+    if not ratios:
+        return float(history[-12] / history[-12:].mean())
+    return float(np.mean(ratios))
+
 
 def load_sales(csv_path: str | Path = DEFAULT_CSV) -> tuple[pd.DataFrame, dict]:
     """Loads the CSV, checks it against CONTEXT and returns the consolidated monthly series (+ a data report)."""
@@ -110,6 +149,8 @@ def feature_row(history: list[float] | np.ndarray, month: pd.Timestamp) -> dict[
         "roll_std_6": roll_std_6,
         "lag_1_rel": lag_1 / roll_mean_12,
         "lag_12_rel": lag_12 / roll_mean_12,
+        "seasonal_index_rel": seasonal_index_rel(history),
+        "yoy_growth_prev": yoy_growth_prev(history),
         "roll_mean_3_rel": roll_mean_3 / roll_mean_12,
         "roll_cv_6": roll_std_6 / roll_mean_12,
         "month_sin": math.sin(angle),  # cyclical month: December and January are neighbours

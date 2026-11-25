@@ -58,30 +58,38 @@ DEFAULT_OUT = Path(__file__).resolve().parent / "outputs"
 
 
 # ----------------------------------------------------------------------------- model
-def make_model(seed: int = SEED) -> Pipeline:
+FOREST_PARAMS = {"n_estimators": 500, "min_samples_leaf": 2, "max_features": 0.7}  # the model of the forecast
+
+
+def make_model(seed: int = SEED, **overrides) -> Pipeline:
     """Scaler + Random Forest. The scaler is fitted on the training rows only (it is inside the pipeline).
 
     A forest does not need scaling (splits are order-based); it is there so the features share one scale, as the
     ticket asks, and so swapping in a scale-sensitive model later does not change the pipeline.
     """
-    forest = RandomForestRegressor(
-        n_estimators=500, min_samples_leaf=2, max_features=0.7, bootstrap=True, oob_score=True, random_state=seed, n_jobs=1
-    )
+    forest = RandomForestRegressor(**{**FOREST_PARAMS, **overrides}, bootstrap=True, oob_score=True, random_state=seed, n_jobs=1)
     return Pipeline([("scale", StandardScaler()), ("forest", forest)])
 
 
-def fit(train_features: pd.DataFrame, seed: int = SEED):
-    """Fits on the training rows. Returns (model, residual quantiles of the OOB error in log space)."""
-    model = make_model(seed)
+def fit(train_features: pd.DataFrame, seed: int = SEED, features: list[str] | None = None, **overrides):
+    """Fits on the training rows. Returns (model, residual quantiles of the OOB error in log space).
+
+    `overrides` change forest parameters and `features` the columns the model reads (both used by the evaluation to test
+    corrective actions); the forecast uses neither.
+    """
+    features = list(features or ft.MODEL_FEATURES)
+    model = make_model(seed, **overrides)
     y = np.log(train_features["ratio"].to_numpy())
-    model.fit(train_features[ft.MODEL_FEATURES], y)
+    model.fit(train_features[features], y)
+    model.feature_names_ = features  # predict_ratio reads the same columns
     oob_residual = y - model.named_steps["forest"].oob_prediction_
     low, high = np.quantile(oob_residual, INTERVAL)
     return model, {"low": float(low), "high": float(high), "oob_rmse_log": float(np.sqrt(np.mean(oob_residual**2)))}
 
 
 def predict_ratio(model: Pipeline, row: dict) -> float:
-    return float(np.exp(model.predict(pd.DataFrame([[row[c] for c in ft.MODEL_FEATURES]], columns=ft.MODEL_FEATURES))[0]))
+    columns = getattr(model, "feature_names_", ft.MODEL_FEATURES)
+    return float(np.exp(model.predict(pd.DataFrame([[row[c] for c in columns]], columns=columns))[0]))
 
 
 def forecast_recursive(model: Pipeline, band: dict, train_series: pd.Series, months: pd.DatetimeIndex) -> pd.DataFrame:
